@@ -29,6 +29,7 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
       @Param("from") LocalDate from,
       @Param("to") LocalDate to);
   Optional<StaffingRequirement> findByIdAndOrganizationId(UUID id, UUID organizationId);
+  boolean existsByWorkTypeId(UUID workTypeId);
 
   @Query("""
       select requirement from StaffingRequirement requirement

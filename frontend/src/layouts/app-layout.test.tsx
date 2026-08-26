@@ -43,6 +43,7 @@ describe("AppLayout", () => {
 
     expect(screen.getByTestId("outlet")).toHaveAttribute("data-has-context", "true");
     expect(screen.queryByTestId("main-workspace")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Work schedule" })).not.toBeInTheDocument();
   });
 
   it("keeps the full-screen background and hides primary navigation on settings subroutes", () => {

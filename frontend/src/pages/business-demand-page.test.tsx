@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BusinessDemandPage } from "./business-demand-page";
 
 const mocks = vi.hoisted(() => ({
@@ -156,15 +156,17 @@ function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  return render(
+  const result = render(
     <MemoryRouter initialEntries={["/business/org-1/plan/demand?unit=unit-1&week=2026-08-10"]}>
       <QueryClientProvider client={client}>
         <Routes>
           <Route path="/business/:organizationId/plan/demand" element={<BusinessDemandPage />} />
+          <Route path="/business/:organizationId/work-types/:workTypeId" element={<h1>Work type settings</h1>} />
         </Routes>
       </QueryClientProvider>
     </MemoryRouter>,
   );
+  return { ...result, client };
 }
 
 describe("BusinessDemandPage", () => {
@@ -181,9 +183,15 @@ describe("BusinessDemandPage", () => {
     }, '"plan-plan-1-rev-4"'));
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("loads aggregate-native Demand and saves a direct numeric edit with If-Match", async () => {
     const user = userEvent.setup();
-    renderPage();
+    const { client } = renderPage();
+    const scheduleKey = ["staffing-plan", "org-1", "plan-1", "schedule"];
+    const invalidateQueries = vi.spyOn(client, "invalidateQueries");
 
     expect(await screen.findByRole("heading", { name: "What does the hotel need this week?" })).toBeInTheDocument();
     const inputs = await screen.findAllByRole("spinbutton", {
@@ -200,6 +208,24 @@ describe("BusinessDemandPage", () => {
       '"plan-plan-1-rev-3"',
       expect.objectContaining({ requiredWorkers: 5 }),
     ));
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: scheduleKey }));
+  });
+
+  it("opens Apply to days from its Demand row", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const workType = await screen.findByRole("button", { name: "Apply Room cleaning to days" });
+    await user.click(workType);
+    expect(await screen.findByRole("heading", { name: "Apply one requirement to several days" })).toBeInTheDocument();
+  });
+
+  it("shows the chosen work type name and planning time instead of its generated code", async () => {
+    renderPage();
+
+    expect((await screen.findAllByText("Room cleaning")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("09:00–16:30 · 7h").length).toBeGreaterThan(0);
+    expect(screen.queryByText("ROOM")).not.toBeInTheDocument();
   });
 
   it("requires an explicit bootstrap when the selected week has no plan", async () => {
@@ -228,6 +254,40 @@ describe("BusinessDemandPage", () => {
       { unitId: "unit-1", weekStart: "2026-08-10" },
       expect.stringMatching(/^web-/),
     ));
+  });
+
+  it("creates a weekly plan when Safari does not provide crypto.randomUUID", async () => {
+    const user = userEvent.setup();
+    const getRandomValues = vi.fn((values: Uint32Array) => {
+      values.set([1, 2, 3, 4]);
+      return values;
+    });
+    vi.stubGlobal("crypto", { getRandomValues });
+    mocks.findPlan
+      .mockResolvedValueOnce(entity({ found: false, plan: null }, null))
+      .mockResolvedValue(entity({ found: true, plan }));
+    mocks.createPlan.mockResolvedValue(entity({
+      planId: plan.planId,
+      organizationId: "org-1",
+      unitId: "unit-1",
+      weekStart: "2026-08-10",
+      timezone: "Europe/Berlin",
+      status: "ACTIVE",
+      draftRevision: 0,
+      created: true,
+      idempotentReplay: false,
+      capabilities: plan.capabilities,
+    }, '"plan-plan-1-rev-0"', 201));
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Create this weekly plan" }));
+
+    await waitFor(() => expect(mocks.createPlan).toHaveBeenCalledWith(
+      "org-1",
+      { unitId: "unit-1", weekStart: "2026-08-10" },
+      "web-00000001-00000002-00000003-00000004",
+    ));
+    expect(getRandomValues).toHaveBeenCalledTimes(1);
   });
 
   it("reloads the canonical week after a stale 412 without replaying the mutation", async () => {

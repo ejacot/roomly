@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import * as React from "react";
 import { ProfilePage } from "./profile-page";
 import { listEmployments } from "../api/endpoints";
+import { WorkspaceProvider } from "../contexts/workspace-context";
 
 const { logoutMock, updatePreferencesMock } = vi.hoisted(() => ({
   logoutMock: vi.fn(),
@@ -100,6 +101,9 @@ vi.mock("../api/endpoints", () => ({
     }
   ]),
   updatePreferences: updatePreferencesMock,
+  listOrganizations: vi.fn(async () => [
+    { id: "business-1", name: "Puiu Group", type: "BUSINESS", timezone: "Europe/Berlin", role: "OWNER" }
+  ]),
   listEmployments: vi.fn(async () => [
     {
       id: "employment-1",
@@ -133,7 +137,9 @@ function renderPage() {
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <ProfilePage />
+        <WorkspaceProvider>
+          <ProfilePage />
+        </WorkspaceProvider>
       </QueryClientProvider>
     </MemoryRouter>
   );
@@ -161,6 +167,7 @@ describe("ProfilePage", () => {
     expect(screen.getByRole("link", { name: "Date & time" })).toHaveAttribute("href", "/settings/preferences?section=date-time");
     expect(screen.getByRole("link", { name: "Appearance" })).toHaveAttribute("href", "/settings/preferences?section=appearance");
     expect(screen.getByRole("link", { name: "Export PDF" })).toHaveAttribute("href", "/settings/export-pdf");
+    expect(screen.getByRole("link", { name: "Business" })).toHaveAttribute("href", "/business/business-1/overview");
     expect(screen.getByRole("button", { name: /log out/i })).toBeInTheDocument();
   });
 

@@ -1,5 +1,4 @@
 import { useOutletContext } from "react-router-dom";
-import { AppLogo } from "../components/branding/app-logo";
 import { WeekSelector } from "../components/navigation/week-selector";
 import { DashboardPage } from "./dashboard-page";
 
@@ -10,11 +9,6 @@ type OutletContext = {
 
 export function HomePage() {
   const { selectedDate, setSelectedDate } = useOutletContext<OutletContext>();
-  const monthLabel = new Intl.DateTimeFormat(undefined, {
-    month: "long",
-    year: "numeric"
-  }).format(selectedDate);
-
   return (
     <div>
       <header
@@ -22,17 +16,8 @@ export function HomePage() {
         data-scroll-region="page-top"
       >
         <div className="dashboard-home-header-content pb-4">
-          <div className="relative flex h-10 items-center justify-between">
-            <span className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-[#10b981]/70">
-              {monthLabel}
-            </span>
-            <AppLogo
-              wordmark
-              className="dashboard-header-wordmark absolute left-1/2 -translate-x-1/2 opacity-90"
-            />
-          </div>
           <div className="mt-3">
-            <WeekSelector value={selectedDate} onChange={setSelectedDate} showMonthLabel={false} />
+            <WeekSelector value={selectedDate} onChange={setSelectedDate} showMonthLabel />
           </div>
         </div>
       </header>

@@ -24,7 +24,7 @@ type SettingsRowProps = {
 
 export function SettingsGroup({ title, description, icon, children }: SettingsGroupProps) {
   return (
-    <section>
+    <section className="settings-group">
       <Card variant="ambient" className="overflow-hidden">
         <div className="px-5 pt-4">
           <div className={`flex items-center gap-2.5 ${description ? "mb-2" : "mb-3"}`}>
@@ -57,7 +57,7 @@ export function SettingsRow({
   iconClassName
 }: SettingsRowProps) {
   const classes =
-    "flex min-h-14 w-full items-center justify-between gap-4 px-5 py-3 text-left transition hover:bg-white/[0.055] focus:outline-none focus:ring-2 focus:ring-white/24 focus:ring-inset";
+    "settings-row flex min-h-14 w-full items-center justify-between gap-4 px-5 py-3 text-left transition hover:bg-white/[0.055] focus:outline-none focus:ring-2 focus:ring-white/24 focus:ring-inset";
 
   const content = (
     <>

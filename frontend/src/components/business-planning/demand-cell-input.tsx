@@ -29,7 +29,16 @@ export function DemandCellInput({
   }, [dirty, value]);
 
   const commit = () => {
-    if (!dirtyRef.current) return;
+    if (!dirtyRef.current) {
+      setDraft(String(value));
+      return;
+    }
+    if (draft === "") {
+      dirtyRef.current = false;
+      setDirty(false);
+      setDraft(String(value));
+      return;
+    }
     const parsed = clampWorkers(Number(draft));
     dirtyRef.current = false;
     setDraft(String(parsed));
@@ -60,7 +69,8 @@ export function DemandCellInput({
   };
 
   const step = (amount: number) => {
-    const next = clampWorkers(Number(draft) + amount);
+    const current = draft === "" ? value : Number(draft);
+    const next = clampWorkers(current + amount);
     setDraft(String(next));
     dirtyRef.current = false;
     setDirty(false);
@@ -89,6 +99,9 @@ export function DemandCellInput({
         data-demand-cell={cellKey}
         disabled={disabled || busy}
         value={draft}
+        onFocus={() => {
+          if (!dirtyRef.current) setDraft("");
+        }}
         onChange={(event) => {
           setDraft(event.target.value.replace(/[^0-9]/g, "").slice(0, 2));
           dirtyRef.current = true;

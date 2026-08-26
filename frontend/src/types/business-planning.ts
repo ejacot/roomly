@@ -394,6 +394,10 @@ export type StaffingScheduleMember = {
   membershipStatus: "ACTIVE" | "INVITED" | "SUSPENDED";
   assignmentIds: string[];
   dayStatuses: StaffingDayStatus[];
+  /** Membership creation time, supplied by the schedule endpoint for local ordering only. */
+  createdAt?: string | null;
+  /** Shared, manager-defined planner row position. */
+  displayOrder: number;
 };
 
 export type StaffingScheduleRequirement = {

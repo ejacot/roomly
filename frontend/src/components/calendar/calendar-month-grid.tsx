@@ -57,12 +57,12 @@ export function CalendarMonthGrid({
       : "grid grid-cols-7 gap-x-1.5 gap-y-2 sm:gap-x-2 sm:gap-y-2.5";
   const cellClassName =
     rowCount === 6
-      ? "relative flex min-h-[58px] flex-col items-center justify-between rounded-[14px] px-0.5 py-1 text-center transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#10b981]/30 sm:min-h-[64px]"
-      : "relative flex min-h-[64px] flex-col items-center justify-between rounded-[15px] px-0.5 py-1.5 text-center transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#10b981]/30 sm:min-h-[70px]";
+      ? "calendar-month-grid__cell relative flex min-h-[58px] flex-col items-center justify-between rounded-[14px] px-0.5 py-1 text-center transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#10b981]/30 sm:min-h-[64px]"
+      : "calendar-month-grid__cell relative flex min-h-[64px] flex-col items-center justify-between rounded-[15px] px-0.5 py-1.5 text-center transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#10b981]/30 sm:min-h-[70px]";
 
   return (
     <section
-      className="mx-auto w-full overflow-hidden px-1 pb-1"
+      className="calendar-month-grid mx-auto w-full overflow-hidden px-1 pb-1"
       aria-label={t("calendarGrid.label")}
     >
       <div className="flex min-h-14 items-center justify-center">

@@ -23,6 +23,7 @@ import { SettingsProfileCard } from "../components/settings/settings-profile-car
 import { getNativeLanguageName, normalizeLanguage } from "../i18n/language";
 import { useSafeBackNavigation } from "../hooks/use-safe-back-navigation";
 import { APP_HOME_PATH } from "../routes/app-paths";
+import { useWorkspace } from "../contexts/workspace-context";
 
 type ProfilePageProps = {
   embedded?: boolean;
@@ -31,6 +32,7 @@ type ProfilePageProps = {
 export function ProfilePage({ embedded = false }: ProfilePageProps) {
   const { t } = useTranslation(["settings", "common"]);
   const { user, logout } = useAuth();
+  const { organizations } = useWorkspace();
   const safeBack = useSafeBackNavigation({ fallback: APP_HOME_PATH });
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
   const largeTitleRef = useRef<HTMLHeadingElement | null>(null);
@@ -80,6 +82,10 @@ export function ProfilePage({ embedded = false }: ProfilePageProps) {
   const activeEmployments = useMemo(
     () => (employmentsQuery.data ?? []).filter((employment) => employment.active),
     [employmentsQuery.data]
+  );
+  const businessWorkspace = useMemo(
+    () => organizations.find((workspace) => workspace.type === "BUSINESS") ?? null,
+    [organizations]
   );
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
   const matchesSearch = (...values: string[]) =>
@@ -133,7 +139,7 @@ export function ProfilePage({ embedded = false }: ProfilePageProps) {
       className={
         embedded
           ? "settings-master-content w-full space-y-5 px-5 pb-10 pt-5"
-          : "mx-auto w-full max-w-[560px] space-y-6 pb-10 pt-8"
+          : "personal-settings-page mx-auto w-full max-w-[760px] space-y-6 pb-10 pt-0"
       }
     >
       {embedded ? (
@@ -184,6 +190,14 @@ export function ProfilePage({ embedded = false }: ProfilePageProps) {
         </h1>
       ) : null}
 
+      {!embedded ? (
+        <div className="personal-settings-page__intro">
+          <span>PERSONAL · ACCOUNT</span>
+          <h1>Account and settings.</h1>
+          <p>Manage your workspaces, preferences and personal data in one place.</p>
+        </div>
+      ) : null}
+
       <SettingsProfileCard
         initials={initials}
         fullName={fullName}
@@ -215,7 +229,7 @@ export function ProfilePage({ embedded = false }: ProfilePageProps) {
         />
         <div className="mx-5 h-px bg-white/[0.06]" />
         <SettingsRow
-          to="/business"
+          to={businessWorkspace ? `/business/${businessWorkspace.id}/overview` : "/business"}
           label={t("common:nav.business")}
           icon={<BriefcaseBusiness className="h-[18px] w-[18px]" />}
           iconClassName="bg-sky-400/[0.09] text-sky-200/80"

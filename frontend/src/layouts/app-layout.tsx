@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { BottomNav } from "../components/navigation/bottom-nav";
 import { RouteScrollReset } from "../components/navigation/route-scroll-reset";
 import { WorkspaceSwitcher } from "../components/navigation/workspace-switcher";
+import { PersonalWorkspaceShell } from "../components/navigation/personal-workspace-shell";
 import { WorkspaceProvider } from "../contexts/workspace-context";
 import { ProfilePage } from "../pages/profile-page";
 import { APP_HOME_PATH } from "../routes/app-paths";
@@ -14,6 +15,7 @@ export function AppLayout() {
   const settingsSplitView = location.pathname.startsWith("/settings/");
   const businessProductView = /^\/business\/[^/]+\//.test(location.pathname);
   const businessWorkspaceView = location.pathname === "/business" || businessProductView;
+  const personalWorkspaceView = [APP_HOME_PATH, "/calendar", "/statistics", "/schedule", "/profile"].includes(location.pathname);
   const desktopWorkspaceView = [
     APP_HOME_PATH,
     "/calendar",
@@ -24,7 +26,8 @@ export function AppLayout() {
   const showBottomNavigation =
     !settingsSplitView &&
     !location.pathname.startsWith("/records/") &&
-    !businessProductView;
+    !businessProductView &&
+    !personalWorkspaceView;
   const ambientView =
     location.pathname === APP_HOME_PATH ||
     location.pathname === "/preview/dashboard" ||
@@ -62,10 +65,15 @@ export function AppLayout() {
             desktopWorkspaceView && "desktop-workspace-shell",
             businessWorkspaceView && "business-workspace-shell",
             businessProductView && "business-planning-route-shell",
+            personalWorkspaceView && "personal-workspace-route-shell",
           )}
         >
-          {!settingsSplitView && !businessProductView ? <WorkspaceSwitcher /> : null}
-          <Outlet context={{ selectedDate, setSelectedDate }} />
+          {!settingsSplitView && !businessProductView && !personalWorkspaceView ? <WorkspaceSwitcher /> : null}
+          {personalWorkspaceView ? (
+            <PersonalWorkspaceShell>
+              <Outlet context={{ selectedDate, setSelectedDate }} />
+            </PersonalWorkspaceShell>
+          ) : <Outlet context={{ selectedDate, setSelectedDate }} />}
         </main>
         {showBottomNavigation ? <BottomNav /> : null}
       </div>

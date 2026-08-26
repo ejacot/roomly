@@ -1,11 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { WeeklyRhythmDay } from "../../types/dashboard";
 import { cn } from "../../utils/cn";
 import { formatCurrency, formatMinutesAsDuration } from "../../utils/format";
-import { resolveWeekSwipeDirection } from "../navigation/week-selector.utils";
 import { Card } from "../ui/card";
 
 type Props = {
@@ -15,7 +14,6 @@ type Props = {
   previousWeekAverageGross?: number;
   flowCurrency?: string;
   onDaySelect?: (date: string) => void;
-  onWeekSwipe?: (direction: -1 | 1) => void;
 };
 
 export function WeeklyHoursCard({
@@ -25,12 +23,14 @@ export function WeeklyHoursCard({
   previousWeekAverageGross,
   flowCurrency = "EUR",
   onDaySelect,
-  onWeekSwipe
 }: Props) {
   const { t, i18n } = useTranslation("dashboard");
-  const [slideDirection, setSlideDirection] = useState(0);
   const sectionRef = useRef<HTMLElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const firstTrackRef = useRef<HTMLDivElement>(null);
+  const lastTrackRef = useRef<HTMLDivElement>(null);
   const preservedViewportTop = useRef<number | null>(null);
+  const [averageGuide, setAverageGuide] = useState<{ left: number; top: number; width: number } | null>(null);
   const weekKey = days[0]?.key ?? "empty";
   const selectedDayKey = days.find((day) => day.selected)?.key ?? "none";
   const metricValues = days.map((day) => variant === "flow" ? day.amount : day.minutes);
@@ -122,6 +122,32 @@ export function WeeklyHoursCard({
     };
   }, [selectedDayKey]);
 
+  useLayoutEffect(() => {
+    const chart = chartRef.current;
+    const firstTrack = firstTrackRef.current;
+    const lastTrack = lastTrackRef.current;
+    if (!chart || !firstTrack || !lastTrack || maximumDailyValue <= 0) {
+      setAverageGuide(null);
+      return;
+    }
+
+    const updateGuide = () => {
+      const left = firstTrack.offsetLeft;
+      const width = lastTrack.offsetLeft + lastTrack.offsetWidth - left;
+      const top = firstTrack.offsetTop + firstTrack.offsetHeight * (1 - averagePercentage / 100);
+      setAverageGuide({ left, top, width });
+    };
+
+    updateGuide();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateGuide);
+      return () => window.removeEventListener("resize", updateGuide);
+    }
+    const observer = new ResizeObserver(updateGuide);
+    observer.observe(chart);
+    return () => observer.disconnect();
+  }, [averagePercentage, maximumDailyValue, weekKey]);
+
   return (
     <section ref={sectionRef}>
       {hasWeeklyActivity ? (
@@ -162,40 +188,13 @@ export function WeeklyHoursCard({
                 <div key={`placeholder-${day.key}`} />
               ))}
             </div>
-            <AnimatePresence custom={slideDirection} initial={false}>
-              <motion.div
-                key={weekKey}
-                custom={slideDirection}
-                drag={onWeekSwipe ? "x" : false}
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.08}
-                dragDirectionLock
-                onDragEnd={(_, info) => {
-                  const direction = resolveWeekSwipeDirection(info);
-                  if (direction !== 0) {
-                    setSlideDirection(direction);
-                    onWeekSwipe?.(direction);
-                  }
-                }}
-                variants={{
-                  enter: (direction: number) => ({
-                    x: direction === 0 ? 0 : direction > 0 ? "100%" : "-100%"
-                  }),
-                  center: { x: 0 },
-                  exit: (direction: number) => ({
-                    x: direction > 0 ? "-100%" : "100%"
-                  })
-                }}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
-                className="absolute inset-0 grid h-52 grid-cols-7 items-stretch gap-1.5"
-              >
-	                {maximumDailyValue > 0 ? (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-[#10b981]/55"
-                      style={{ bottom: `calc(2.5rem + ${(averagePercentage / 100) * 7}rem)` }}
+            <div ref={chartRef} key={weekKey} className="absolute inset-0 grid h-52 grid-cols-7 items-stretch gap-1.5">
+	              {averageGuide ? (
+                    <span
+                      data-testid="weekly-average-guide"
+                      data-average-percentage={averagePercentage}
+                      className="pointer-events-none absolute z-20 h-px border-t border-dashed border-[#10b981]/55"
+                      style={{ left: averageGuide.left, top: averageGuide.top, width: averageGuide.width }}
                       aria-hidden="true"
                     />
                   ) : null}
@@ -246,7 +245,10 @@ export function WeeklyHoursCard({
                       }`}>
                         {day.label}
                       </p>
-                      <div className="relative h-28 w-full">
+                      <div
+                        ref={index === 0 ? firstTrackRef : index === days.length - 1 ? lastTrackRef : undefined}
+                        className="relative h-28 w-full"
+                      >
                         <span
                           className="weekly-chart-track absolute bottom-0 left-1/2 h-28 w-full max-w-6 -translate-x-1/2 rounded-full bg-white/[0.065]"
                           aria-hidden="true"
@@ -341,8 +343,7 @@ export function WeeklyHoursCard({
                     </button>
                   );
                 })}
-              </motion.div>
-            </AnimatePresence>
+            </div>
           </div>
           </div>
           <div

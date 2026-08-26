@@ -525,6 +525,31 @@ class StaffingPlanDraftMutationIntegrationTest {
   }
 
   @Test
+  void cancelledAssignmentCanBeAssignedAgainToTheSameMember() throws Exception {
+    Fixture fixture = fixture();
+    String original = createAssignment(fixture, fixture.memberId(), "reassign-original", 1);
+    String path = "/api/organizations/" + fixture.organizationId()
+        + "/staffing/plans/" + fixture.planId() + "/schedule/assignments/" + original;
+
+    mvc.perform(delete(path).header(HttpHeaders.AUTHORIZATION, token(owner))
+            .header(HttpHeaders.IF_MATCH, etag(fixture.planId(), 2)))
+        .andExpect(status().isOk()).andExpect(header().string(HttpHeaders.ETAG,
+            etag(fixture.planId(), 3)));
+
+    String restored = createAssignment(fixture, fixture.memberId(), "reassign-restored", 3);
+
+    assertThat(restored).isEqualTo(original);
+    assertThat(jdbc.queryForObject("""
+        select count(*) from staffing_assignments
+        where requirement_id=?::uuid and membership_id=?::uuid and assignment_status='ASSIGNED'
+        """, Integer.class, fixture.requirementId(), fixture.memberId())).isEqualTo(1);
+    assertThat(jdbc.queryForObject("""
+        select count(*) from staffing_assignments
+        where requirement_id=?::uuid and membership_id=?::uuid and assignment_status='CANCELLED'
+        """, Integer.class, fixture.requirementId(), fixture.memberId())).isZero();
+  }
+
+  @Test
   void staleRevisionAndCrossTenantResourcesAreOpaque() throws Exception {
     Fixture fixture = fixture();
     Fixture other = fixture();

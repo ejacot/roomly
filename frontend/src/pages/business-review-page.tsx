@@ -12,6 +12,7 @@ import {
   LockKeyhole,
   Printer,
   RefreshCw,
+  Send,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -90,6 +91,7 @@ export function BusinessReviewPage() {
   const versionPageCache = useRef(new Map<string, VersionPage>());
   const versionDetailCache = useRef(new Map<number, VersionDetailResult>());
   const firstBlockerRef = useRef<HTMLElement | null>(null);
+  const firstActionableIssueRef = useRef<HTMLElement | null>(null);
 
   const organizationsQuery = useQuery({ queryKey: ["organizations"], queryFn: listOrganizations });
   const businessOrganizations = useMemo(
@@ -281,7 +283,7 @@ export function BusinessReviewPage() {
         setNotice({ type: "info", message: t("planning.review.stale") });
         await refreshReview();
         window.setTimeout(() => firstBlockerRef.current?.focus(), 0);
-      } else if (error.status === 409) {
+      } else if (error.status === 409 && error.code === "IDEMPOTENCY_CONFLICT") {
         operationKeys.current.clear();
         setAcknowledged(new Set());
         setNotice({ type: "error", message: t("planning.review.idempotencyConflict") });
@@ -292,6 +294,14 @@ export function BusinessReviewPage() {
     } finally {
       if (contextRef.current === startContext) setPublishing(false);
     }
+  };
+
+  const focusFirstPublishRequirement = () => {
+    const target = firstActionableIssueRef.current ?? firstBlockerRef.current;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    const acknowledgement = target.querySelector<HTMLInputElement>("input:not(:checked)");
+    window.setTimeout(() => (acknowledgement ?? target).focus(), 250);
   };
 
   const loadOlder = async () => {
@@ -366,6 +376,7 @@ export function BusinessReviewPage() {
               state={reviewState}
               acknowledged={acknowledged}
               firstBlockerRef={firstBlockerRef}
+              firstActionableIssueRef={firstActionableIssueRef}
               onToggle={(key) => setAcknowledged((current) => toggleSet(current, key))}
               onAcknowledgeAll={() => setAcknowledged(new Set(review.requiredAcknowledgementKeys))}
               demandHref={`/business/${organizationId}/plan/demand?unit=${unitId}&week=${weekStart}`}
@@ -385,11 +396,13 @@ export function BusinessReviewPage() {
             plan={plan}
             review={review}
             state={reviewState}
+            notice={notice}
             publicationNote={publicationNote}
             publishing={publishing}
             published={published}
             onNoteChange={setPublicationNote}
             onPublish={() => void handlePublish()}
+            onResolve={() => focusFirstPublishRequirement()}
             onOpenPublished={(version) => setSelectedVersion(version)}
           />
         </div>
@@ -453,6 +466,7 @@ function IssueReview({
   state,
   acknowledged,
   firstBlockerRef,
+  firstActionableIssueRef,
   onToggle,
   onAcknowledgeAll,
   demandHref,
@@ -463,6 +477,7 @@ function IssueReview({
   state: ReviewUiState;
   acknowledged: Set<string>;
   firstBlockerRef: React.MutableRefObject<HTMLElement | null>;
+  firstActionableIssueRef: React.MutableRefObject<HTMLElement | null>;
   onToggle: (key: string) => void;
   onAcknowledgeAll: () => void;
   demandHref: string;
@@ -473,6 +488,8 @@ function IssueReview({
   const firstBlockerKey = groups
     .find((group) => group.severity === "BLOCKING_CONFLICT")
     ?.issues.at(0)?.issueKey;
+  const firstActionableKey = groups.flatMap((group) => group.issues)
+    .find((issue) => issue.publishBlocking || issue.acknowledgementRequired)?.issueKey;
   return (
     <section className="business-review__issues" aria-label={t("planning.review.title")} data-review-state={state.kind}>
       <header>
@@ -488,12 +505,16 @@ function IssueReview({
             <div>
               {group.issues.map((issue) => {
                 const isFirstBlocker = issue.issueKey === firstBlockerKey;
+                const isFirstActionable = issue.issueKey === firstActionableKey;
                 const goesToSchedule = Boolean(issue.assignmentId) || ["INVITATION_PENDING", "INTERVAL_OVERRIDE", "DUPLICATE_ASSIGNMENT", "INCOMPATIBLE_OVERLAP", "PENDING_REQUEST", "SUSPENDED_MEMBER"].includes(issue.code);
                 const destination = goesToSchedule
                   ? scheduleHref
                   : demandHref;
                 return (
-                  <article key={issue.issueKey} tabIndex={isFirstBlocker ? -1 : undefined} ref={isFirstBlocker ? (node) => { firstBlockerRef.current = node; } : undefined}>
+                  <article key={issue.issueKey} tabIndex={isFirstBlocker || isFirstActionable ? -1 : undefined} ref={isFirstBlocker || isFirstActionable ? (node) => {
+                    if (isFirstBlocker) firstBlockerRef.current = node;
+                    if (isFirstActionable) firstActionableIssueRef.current = node;
+                  } : undefined}>
                     <div><strong>{issueMessage(t, issue)}</strong><span>{issue.date ? t("planning.review.issueDate", { date: formatDate(issue.date, i18n.resolvedLanguage ?? i18n.language), code: issue.code }) : issue.code}</span></div>
                     {issue.acknowledgementRequired && state.kind === "PUBLISHED_CURRENT" ? (
                       <span className="business-review__published-issue"><Check aria-hidden="true" />{t("planning.review.includedInPublished")}</span>
@@ -516,21 +537,25 @@ function PublishRail({
   plan,
   review,
   state,
+  notice,
   publicationNote,
   publishing,
   published,
   onNoteChange,
   onPublish,
+  onResolve,
   onOpenPublished,
 }: {
   plan: StaffingPlan;
   review: StaffingReview;
   state: ReviewUiState;
+  notice: Notice | null;
   publicationNote: string;
   publishing: boolean;
   published: StaffingPublishResult | null;
   onNoteChange: (value: string) => void;
   onPublish: () => void;
+  onResolve: () => void;
   onOpenPublished: (version: number) => void;
 }) {
   const { t, i18n } = useTranslation("business");
@@ -551,17 +576,32 @@ function PublishRail({
       </aside>
     );
   }
+  const actionableIssues = flattenIssues(review)
+    .filter((issue) => issue.publishBlocking || issue.acknowledgementRequired);
+  const needsResolution = state.kind === "BLOCKED" || state.kind === "ACKNOWLEDGEMENT_REQUIRED" || state.kind === "UNPUBLISHED_CHANGES";
   return (
     <aside className="business-review__publish-rail" aria-busy={publishing} data-review-state={state.kind}>
       <LockKeyhole aria-hidden="true" />
       <span>{reviewStateLabel(t, state)}</span>
       <h2>{t("planning.review.publishTitle")}</h2>
       <p>{t("planning.review.publishHint")}</p>
+      {notice ? <div className={`business-review__publish-notice is-${notice.type}`} role={notice.type === "error" ? "alert" : "status"}>{notice.message}</div> : null}
       <dl><div><dt>{t("planning.coverage.covered")}</dt><dd>{review.coverage.covered}/{review.coverage.required}</dd></div><div><dt>{t("planning.review.groups.WARNING")}</dt><dd>{review.warningCount}</dd></div><div><dt>{t("planning.review.openPositions")}</dt><dd>{review.coverage.openPositions}</dd></div></dl>
       <label><span>{t("planning.review.publicationNote")}</span><textarea maxLength={1000} value={publicationNote} disabled={state.kind === "PUBLISHING"} onChange={(event) => onNoteChange(event.target.value)} placeholder={t("planning.review.publicationNotePlaceholder")} /></label>
-      <button className="business-review__publish-action" type="button" disabled={!state.canPublish || publishing} onClick={onPublish}>
-        {publishing ? <LoaderCircle className="is-spinning" aria-hidden="true" /> : <LockKeyhole aria-hidden="true" />}
-        {publishing ? t("planning.review.publishing") : t("planning.review.publish")}
+      {needsResolution && actionableIssues.length > 0 ? (
+        <div className="business-review__publish-requirements" role="status">
+          <strong>{reviewStateHelp(t, state)}</strong>
+          <ul>{actionableIssues.slice(0, 3).map((issue) => <li key={issue.issueKey}>{issueMessage(t, issue)}</li>)}</ul>
+          {actionableIssues.length > 3 ? <small>+{actionableIssues.length - 3}</small> : null}
+        </div>
+      ) : null}
+      <button className="business-review__publish-action" type="button" disabled={publishing || (!state.canPublish && !needsResolution)} onClick={state.canPublish ? onPublish : onResolve}>
+        {publishing ? <LoaderCircle className="is-spinning" aria-hidden="true" /> : needsResolution ? <AlertTriangle aria-hidden="true" /> : <Send aria-hidden="true" />}
+        {publishing
+          ? t("planning.review.publishing")
+          : state.canPublish
+            ? t("planning.review.publish")
+            : reviewStateLabel(t, state)}
       </button>
       {!plan.capabilities.publish ? <p className="business-review__publish-help">{t("planning.review.readOnly")}</p> : state.kind !== "READY_TO_PUBLISH" && state.kind !== "PUBLISHING" ? <p className="business-review__publish-help">{reviewStateHelp(t, state)}</p> : null}
     </aside>
@@ -791,9 +831,26 @@ function toggleSet(current: Set<string>, key: string) {
 function stableOperationKey(store: Map<string, string>, semanticKey: string) {
   const existing = store.get(semanticKey);
   if (existing) return existing;
-  const value = `web-publish-${crypto.randomUUID()}`;
+  const value = `web-publish-${operationId()}`;
   store.set(semanticKey, value);
   return value;
+}
+
+/**
+ * iPad Safari exposes crypto.randomUUID only in a secure context. Local pilot testing is
+ * intentionally also available through http://<LAN-IP>, so publishing needs the same safe
+ * idempotency-key fallback used by Demand instead of failing before the request is sent.
+ */
+function operationId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const values = new Uint32Array(4);
+    globalThis.crypto.getRandomValues(values);
+    return Array.from(values, (value) => value.toString(16).padStart(8, "0")).join("-");
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function strongEtag(value: string) {

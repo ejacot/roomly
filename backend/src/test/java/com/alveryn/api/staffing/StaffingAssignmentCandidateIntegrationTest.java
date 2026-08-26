@@ -114,11 +114,31 @@ class StaffingAssignmentCandidateIntegrationTest {
   }
 
   @Test
+  void treatsAnOpenEndedRequirementAsAssignableFromItsKnownStart() throws Exception {
+    Fixture fixture = fixture(1);
+    UUID member = member(fixture.organizationId, "Day", "Worker", "ACTIVE");
+    jdbc.update("update staffing_requirements set start_time='08:00',end_time=null where id=?",
+        fixture.requirementId);
+
+    mvc.perform(get(candidatePath(fixture))
+            .param("requirementId", fixture.requirementId.toString())
+            .header(HttpHeaders.AUTHORIZATION, token(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.requirement.startTime").value("08:00:00"))
+        .andExpect(jsonPath("$.data.requirement.endTime").doesNotExist())
+        .andExpect(jsonPath("$.data.candidates[?(@.membershipId=='" + member
+            + "')].eligibility").value("ELIGIBLE"))
+        .andExpect(jsonPath("$.data.candidates[?(@.membershipId=='" + member
+            + "')].reasons[?(@.code=='AVAILABLE_FOR_INTERVAL')]").exists());
+  }
+
+  @Test
   void explainsTimeAwayRequestsOverlapTouchingIntervalsAndMembershipStatusWithoutLeaks()
       throws Exception {
     Fixture fixture = fixture(1);
     UUID vacation = member(fixture.organizationId, "Vacation", "Worker", "ACTIVE");
     UUID sick = member(fixture.organizationId, "Sick", "Worker", "ACTIVE");
+    UUID dayOff = member(fixture.organizationId, "Day off", "Worker", "ACTIVE");
     UUID pending = member(fixture.organizationId, "Pending", "Worker", "ACTIVE");
     UUID overlap = member(fixture.organizationId, "Overlap", "Worker", "ACTIVE");
     UUID touching = member(fixture.organizationId, "Touching", "Worker", "ACTIVE");
@@ -127,6 +147,7 @@ class StaffingAssignmentCandidateIntegrationTest {
     UUID suspended = member(fixture.organizationId, "Suspended", "Worker", "SUSPENDED");
     dayEntry(fixture, vacation, "VACATION", "PRIVATE VACATION NOTE");
     dayEntry(fixture, sick, "SICK", "PRIVATE SICK NOTE");
+    dayEntry(fixture, dayOff, "REST_DAY", "PRIVATE DAY OFF NOTE");
     jdbc.update("""
         insert into staffing_absence_requests(id,organization_id,membership_id,absence_type,
           start_date,end_date,notes,request_status,created_at,updated_at)
@@ -152,6 +173,8 @@ class StaffingAssignmentCandidateIntegrationTest {
             + "')].eligibility").value("INELIGIBLE"))
         .andExpect(jsonPath("$.data.candidates[?(@.membershipId=='" + sick
             + "')].eligibility").value("INELIGIBLE"))
+        .andExpect(jsonPath("$.data.candidates[?(@.membershipId=='" + dayOff
+            + "')].eligibility").value("INELIGIBLE"))
         .andExpect(jsonPath("$.data.candidates[?(@.membershipId=='" + pending
             + "')].eligibility").value("ELIGIBLE_WITH_WARNING"))
         .andExpect(jsonPath("$.data.candidates[?(@.membershipId=='" + overlap
@@ -169,6 +192,7 @@ class StaffingAssignmentCandidateIntegrationTest {
             "DUPLICATE_ASSIGNMENT", "OTHER_UNIT_ASSIGNMENT")
         .doesNotContain("PRIVATE VACATION NOTE")
         .doesNotContain("PRIVATE SICK NOTE")
+        .doesNotContain("PRIVATE DAY OFF NOTE")
         .doesNotContain("PRIVATE WHATSAPP NOTE")
         .doesNotContain(sibling.toString())
         .doesNotContain(foreignMember.toString())

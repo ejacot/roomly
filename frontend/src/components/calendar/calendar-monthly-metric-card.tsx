@@ -51,7 +51,7 @@ export function CalendarMonthlyMetricCard({
     <section
       aria-label={t(variant === "flow" ? "monthlyCharts.flow" : "monthlyCharts.rhythm")}
     >
-      <Card className="overflow-hidden">
+      <Card className="personal-calendar-monthly-metric overflow-hidden">
         <div className="flex min-h-16 items-center justify-between gap-4 border-b border-white/[0.07] px-5 py-3">
           <div className="min-w-0">
             <p className="text-[0.6rem] font-medium uppercase tracking-[0.12em] text-[#f5f5f5]/34">

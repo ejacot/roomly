@@ -118,6 +118,7 @@
   margin: 0 auto;
   border: 1px solid var(--bp-line-strong);
   background: var(--bp-surface);
+  touch-action: pan-y;
 }
 
 .schedule-grid__heading {
@@ -132,6 +133,10 @@
 
 .schedule-grid__heading h2 { margin: 0; font-size: 0.93rem; }
 .schedule-grid__heading p { margin: 3px 0 0; color: var(--bp-muted); font-size: 0.65rem; }
+.schedule-grid__tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; }
+.schedule-grid__sort { display: flex; align-items: center; gap: 7px; color: var(--bp-muted); font: 800 .56rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.schedule-grid__sort select { min-height: 32px; border: 1px solid var(--bp-line-strong); border-radius: 0; background: var(--bp-surface-strong); color: var(--bp-ink); padding: 0 26px 0 8px; font: 800 .63rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0; text-transform: none; }
+.schedule-grid__sort select:focus-visible { outline: 3px solid var(--bp-green-soft); outline-offset: 2px; }
 .schedule-grid__legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; }
 .schedule-grid__legend span { font: 700 0.56rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--bp-muted); }
 .schedule-grid__legend [data-status="VACATION"] { color: #477fc0; }
@@ -139,15 +144,19 @@
 .schedule-grid__legend [data-status="PENDING"] { color: #9a6a31; }
 .schedule-grid__legend [data-status="CONFLICT"] { color: var(--bp-danger); }
 
-.schedule-grid__scroller { overflow: auto; outline: 0; }
+.schedule-grid__scroller {
+  /* Page scrolling stays native; swiping switches the visible column set. */
+  overflow: visible;
+  outline: 0;
+}
 .schedule-grid__scroller:focus-visible { outline: 3px solid var(--bp-green-soft); outline-offset: -3px; }
-.schedule-grid table { width: 100%; min-width: 1140px; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.schedule-grid table { width: 100%; min-width: 0; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
 .schedule-grid th, .schedule-grid td { border-right: 1px solid var(--bp-line); border-bottom: 1px solid var(--bp-line); }
 .schedule-grid tr > :last-child { border-right: 0; }
 .schedule-grid tbody tr:last-child > * { border-bottom: 0; }
 .schedule-grid thead th {
   position: sticky;
-  top: 0;
+  top: 76px;
   z-index: 8;
   height: 58px;
   background: var(--bp-surface-strong);
@@ -172,15 +181,28 @@
 }
 
 .schedule-grid tbody td { position: relative; padding: 5px; vertical-align: top; }
-.business-schedule.is-comfortable .schedule-grid tbody tr:not(.schedule-grid__open-row) > * { height: 78px; }
-.business-schedule.is-compact .schedule-grid tbody tr:not(.schedule-grid__open-row) > * { height: 58px; }
+.business-schedule.is-comfortable .schedule-grid tbody tr:not(.schedule-grid__open-row) > * { height: 58px; }
+.business-schedule.is-compact .schedule-grid tbody tr:not(.schedule-grid__open-row) > * { height: 36px; }
 .business-schedule.is-compact .schedule-grid__assignment span,
-.business-schedule.is-compact .schedule-grid__member small { display: none; }
+.business-schedule.is-compact .schedule-grid__member small,
+.business-schedule.is-compact .schedule-grid__status small { display: none; }
+.business-schedule.is-compact .schedule-grid tbody th { padding: 4px 8px; }
+.business-schedule.is-compact .schedule-grid tbody td { padding: 3px; }
+.business-schedule.is-compact .schedule-grid__assignment { min-height: 28px; padding: 3px 4px; }
+.business-schedule.is-compact .schedule-grid__status { min-height: 28px; grid-template-columns: 1fr; justify-items: center; }
 .schedule-grid tbody td[data-target] { background: var(--bp-green-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bp-green) 35%, transparent); }
+.schedule-grid tbody td[data-assignable] { cursor: pointer; }
+.schedule-grid tbody td[data-assignable]:focus-visible { outline: 3px solid var(--bp-green); outline-offset: -3px; }
 
-.schedule-grid__member { display: block; min-width: 0; }
+.schedule-grid__member { display: block; width: 100%; min-width: 0; color: inherit; text-align: left; }
+.schedule-grid__member:not(:disabled) { cursor: pointer; }
+.schedule-grid__member:not(:disabled) { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.schedule-grid__member:not(:disabled):hover strong { color: var(--bp-green); text-decoration: underline; text-underline-offset: 3px; }
+.schedule-grid__member:focus-visible { outline: 3px solid var(--bp-green); outline-offset: 3px; }
 .schedule-grid__member strong { display: block; overflow: hidden; font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-grid__member small { display: block; margin-top: 3px; color: var(--bp-muted); font-size: 0.55rem; }
+.schedule-grid tbody tr[data-dragging] > * { background: color-mix(in srgb, var(--bp-green-soft) 72%, var(--bp-surface-strong)); box-shadow: inset 4px 0 0 var(--bp-green); }
+.schedule-grid tbody tr[data-dragging] .schedule-grid__member { cursor: pointer; }
 
 .schedule-grid__open-row > * { min-height: 72px; background: color-mix(in srgb, var(--bp-warning-soft) 45%, var(--bp-surface)); }
 .schedule-grid__open-row th { display: flex; align-items: center; gap: 9px; color: var(--bp-warning); }
@@ -201,6 +223,9 @@
 }
 .schedule-grid__open-row td > button:hover,
 .schedule-grid__open-row td > button.is-selected { border-color: var(--bp-green); background: var(--bp-green-soft); }
+.schedule-grid__open-row td > button[data-work-type-color] { border-color: color-mix(in srgb, var(--schedule-work-type-color) 55%, var(--bp-line)); }
+.schedule-grid__open-row td > button[data-work-type-color]:hover,
+.schedule-grid__open-row td > button.is-selected[data-work-type-color] { background: color-mix(in srgb, var(--schedule-work-type-color) 14%, var(--bp-surface)); }
 .schedule-grid__open-row td > button:disabled { cursor: default; opacity: 0.7; }
 .schedule-grid__open-row button strong { color: var(--bp-ink); font: 800 0.69rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .schedule-grid__open-row button span { color: var(--bp-warning); font: 800 0.61rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -219,14 +244,24 @@
   text-align: left;
 }
 .schedule-grid__assignment + .schedule-grid__assignment { margin-top: 4px; }
+.schedule-grid__assignment-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--bp-line-strong); }
+.schedule-grid__assignment-pair .schedule-grid__assignment { min-width: 0; min-height: 46px; border-left: 0; }
+.schedule-grid__assignment-pair .schedule-grid__assignment + .schedule-grid__assignment { margin-top: 0; border-left: 1px solid var(--bp-line-strong); }
+.schedule-grid__assignment-pair .schedule-grid__assignment[data-work-type-color]:not([data-conflict]) { box-shadow: inset 0 2px 0 var(--schedule-work-type-color); }
+.schedule-grid__assignment-pair .schedule-grid__assignment strong, .schedule-grid__assignment-pair .schedule-grid__assignment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-grid__assignment:hover:not(:disabled) { background: color-mix(in srgb, var(--bp-green-soft) 70%, var(--bp-surface-strong)); }
 .schedule-grid__assignment strong { font: 800 0.67rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .schedule-grid__assignment span { margin-top: 4px; color: var(--bp-muted); font: 600 0.51rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .schedule-grid__assignment svg { position: absolute; top: 5px; right: 5px; width: 12px; color: var(--bp-danger); }
 .schedule-grid__assignment[data-conflict] { border-left-color: var(--bp-danger); background: var(--bp-danger-soft); }
+.schedule-grid__assignment[data-work-type-color]:not([data-conflict]) {
+  border-left-color: var(--schedule-work-type-color);
+  background: color-mix(in srgb, var(--schedule-work-type-color) 14%, var(--bp-surface));
+}
 
 .schedule-grid__status {
   display: grid;
+  width: 100%;
   min-height: 36px;
   grid-template-columns: 20px 1fr;
   align-items: center;
@@ -235,6 +270,9 @@
   padding: 3px;
   color: var(--bp-muted);
 }
+.schedule-grid__status:not(:disabled) { cursor: pointer; }
+.schedule-grid__status:not(:disabled):hover { background: color-mix(in srgb, var(--bp-green-soft) 55%, transparent); }
+.assignment-inspector__remove-status { width: 100%; margin-top: 10px; color: var(--bp-danger, #a53b36); }
 .schedule-grid__status strong { font: 900 0.7rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .schedule-grid__status small { font-size: 0.5rem; }
 .schedule-grid__status[data-status="VACATION"] { color: #477fc0; }
@@ -286,7 +324,38 @@
 .assignment-inspector__empty h3 { margin: 0; color: var(--bp-ink); }
 .assignment-inspector__empty p { max-width: 300px; margin: 0; }
 .assignment-inspector__content section > h3 { margin: 20px 0 10px; color: var(--bp-muted); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.assignment-inspector__day-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 18px 0; }
+.assignment-inspector__day-actions button { display: grid; min-height: 58px; place-content: center; gap: 4px; border: 1px solid var(--bp-line-strong); color: var(--bp-ink); }
+.assignment-inspector__day-actions button:hover:not(:disabled) { background: var(--bp-green-soft); border-color: var(--bp-green); }
+.assignment-inspector__day-actions button:disabled { opacity: 0.45; }
+.assignment-inspector__day-actions strong { font: 900 0.86rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.assignment-inspector__day-actions span { color: var(--bp-muted); font-size: 0.57rem; }
+.assignment-inspector__field { display: grid; gap: 7px; margin-top: 20px; }
+.assignment-inspector__field > span,
+.assignment-inspector__week-days legend { color: var(--bp-muted); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.assignment-inspector__field select { min-height: 44px; border: 1px solid var(--bp-line-strong); background: var(--bp-surface); color: var(--bp-ink); padding: 0 10px; font: inherit; }
+.assignment-inspector__week-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; margin: 18px 0 0; border: 1px solid var(--bp-line-strong); padding: 0; }
+.assignment-inspector__week-days legend { grid-column: 1 / -1; width: 100%; margin: 0; border-bottom: 1px solid var(--bp-line); padding: 9px 10px; }
+.assignment-inspector__week-days label { position: relative; display: grid; min-width: 0; min-height: 66px; place-items: center; border-right: 1px solid var(--bp-line); padding: 6px 3px; text-align: center; }
+.assignment-inspector__week-days label:last-child { border-right: 0; }
+.assignment-inspector__week-days label:not([data-disabled]):hover { border-color: var(--bp-green); background: var(--bp-green-soft); }
+.assignment-inspector__week-days label[data-disabled] { cursor: not-allowed; opacity: 0.45; }
+.assignment-inspector__week-days label:has(input:checked) { background: var(--bp-green-soft); box-shadow: inset 0 3px var(--bp-green); }
+.assignment-inspector__week-days input { position: absolute; opacity: 0; }
+.assignment-inspector__week-days span { display: grid; gap: 4px; place-items: center; }
+.assignment-inspector__week-days strong { color: var(--bp-muted); font-size: 0.59rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.assignment-inspector__week-days small { color: var(--bp-ink); font: 800 0.75rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.assignment-inspector__week-days input:checked + span { color: var(--bp-green); }
+.assignment-inspector__week-days input:checked + span strong { color: var(--bp-green); }
+.assignment-inspector__week-days input:checked + span small { color: var(--bp-green); }
+.assignment-inspector__week-assignment .assignment-inspector__confirm { width: 100%; margin-top: 18px; }
 .assignment-inspector__candidates { display: grid; border: 1px solid var(--bp-line-strong); }
+.assignment-inspector__people-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 10px; }
+.assignment-inspector__people-heading > h3 { margin: 0 !important; }
+.assignment-inspector__search { width: min(170px, 48%); }
+.assignment-inspector__search input { width: 100%; min-height: 34px; border: 1px solid var(--bp-line-strong); background: var(--bp-surface); padding: 0 10px; color: var(--bp-ink); font-size: 0.66rem; }
+.assignment-inspector__search input:focus-visible { border-color: var(--bp-green); outline: 3px solid var(--bp-green-soft); }
+.assignment-inspector__no-search-results { margin: 10px 0 0; color: var(--bp-muted); font-size: 0.67rem; }
 .assignment-inspector__candidates > button,
 .assignment-inspector__ineligible button { display: grid; width: 100%; gap: 6px; border-bottom: 1px solid var(--bp-line); padding: 13px; color: var(--bp-ink); text-align: left; }
 .assignment-inspector__candidates > button:last-child { border-bottom: 0; }
@@ -301,9 +370,13 @@
 .assignment-inspector__ineligible button > small { color: var(--bp-muted); font: 600 0.57rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .assignment-inspector__candidates ul,
 .assignment-inspector__ineligible ul { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 0; padding-left: 15px; color: var(--bp-muted); font-size: 0.6rem; }
-.assignment-inspector__decision { margin-top: 16px; border-top: 1px solid var(--bp-line-strong); padding-top: 15px; }
+.assignment-inspector__decision { position: sticky; top: 0; z-index: 2; margin: 0 -1px 16px; border: 1px solid var(--bp-line-strong); background: var(--bp-surface); padding: 13px; box-shadow: 0 8px 18px color-mix(in srgb, var(--bp-ink) 7%, transparent); }
 .assignment-inspector__decision > div:first-child span { display: block; color: var(--bp-muted); font-size: 0.58rem; text-transform: uppercase; }
 .assignment-inspector__decision > div:first-child strong { display: block; margin-top: 4px; font-size: 0.94rem; }
+.assignment-inspector__selection-reasons { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; margin-top: 12px; border-left: 3px solid var(--bp-green); background: var(--bp-green-soft); padding: 9px 10px; color: var(--bp-ink); }
+.assignment-inspector__selection-reasons.is-warning { border-left-color: var(--bp-warning); background: var(--bp-warning-soft); color: var(--bp-warning); }
+.assignment-inspector__selection-reasons > svg { width: 15px; margin-top: 1px; }
+.assignment-inspector__selection-reasons ul { display: grid; gap: 4px; margin: 0; padding-left: 14px; font-size: 0.64rem; line-height: 1.35; }
 .assignment-inspector__warning-confirm { display: block; margin-top: 13px; }
 .assignment-inspector__warning-confirm input { position: absolute; opacity: 0; }
 .assignment-inspector__warning-confirm span { display: flex; min-height: 44px; align-items: center; gap: 8px; border: 1px solid var(--bp-warning); background: var(--bp-warning-soft); padding: 8px 10px; color: var(--bp-warning); font-size: 0.66rem; }
@@ -335,10 +408,6 @@
 .assignment-editor__actions .is-danger { color: var(--bp-danger); }
 .assignment-editor__actions .is-primary { border-color: var(--bp-ink); background: var(--bp-ink); color: var(--bp-bg); }
 .assignment-editor__actions button:disabled { opacity: 0.42; }
-
-@media (max-width: 1100px) {
-  .schedule-grid table { min-width: 1080px; }
-}
 
 @media (max-width: 780px) {
   .business-schedule__intro { align-items: flex-start; flex-direction: column; gap: 14px; }

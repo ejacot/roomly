@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { listEmployments, listWorkTypes } from "../../../api/endpoints";
 import { queryKeys } from "../../../api/query-keys";
 import { SectionHeading } from "../../../components/ui/section-heading";
@@ -212,19 +213,27 @@ export function StatisticsPage() {
   const showProductivity = statistics.productivity.isLoading
     || statistics.productivity.isError
     || Boolean(statistics.productivity.data?.available);
+  const headerActionsTarget = typeof document === "undefined"
+    ? null
+    : document.getElementById("personal-workspace-header-actions");
+  const exportActions = (
+    <>
+      <button type="button" disabled={!overview} onClick={() => overview && exportStatisticsCsv(overview, timeSeries?.points ?? [], breakdown)} className="personal-workspace__header-action disabled:opacity-35" aria-label={t("statistics.export.csv")}>
+        <Download aria-hidden="true" />
+      </button>
+      <button type="button" disabled={!overview} onClick={() => overview && navigate(`/settings/export-pdf?from=${filters.from}&to=${filters.to}&returnTo=/statistics`)} className="personal-workspace__header-action disabled:opacity-35" aria-label={t("statistics.export.pdf")}>
+        <FileText aria-hidden="true" />
+      </button>
+    </>
+  );
 
   return (
-    <div className="statistics-workspace space-y-6 pb-8">
+    <>
+      {headerActionsTarget ? createPortal(exportActions, headerActionsTarget) : null}
+      <div className="personal-statistics-page statistics-workspace space-y-6 pb-8">
       <div className="sticky-header-blur -mx-1 flex items-end justify-between gap-3 px-1 pb-3 pt-1">
         <SectionHeading eyebrow={t("statistics.eyebrow")} title={t("statistics.title")} />
-        <div className="mb-1 flex gap-2">
-          <button type="button" disabled={!overview} onClick={() => overview && exportStatisticsCsv(overview, timeSeries?.points ?? [], breakdown)} className="statistics-export-button disabled:opacity-35" aria-label={t("statistics.export.csv")}>
-            <Download className="h-4 w-4" /><span className="hidden sm:inline">CSV</span>
-          </button>
-          <button type="button" disabled={!overview} onClick={() => overview && navigate(`/settings/export-pdf?from=${filters.from}&to=${filters.to}&returnTo=/statistics`)} className="statistics-export-button disabled:opacity-35" aria-label={t("statistics.export.pdf")}>
-            <FileText className="h-4 w-4" /><span className="hidden sm:inline">PDF</span>
-          </button>
-        </div>
+        {!headerActionsTarget ? <div className="mb-1 flex gap-2">{exportActions}</div> : null}
       </div>
       <StatisticsFilterBar
         filters={filters}
@@ -298,7 +307,8 @@ export function StatisticsPage() {
           />
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ import { MotionConfig } from "framer-motion";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { AuthProvider } from "./features/auth/auth-provider";
+import { GlobalPullToRefresh } from "./components/navigation/global-pull-to-refresh";
 import { createAppRouter } from "./routes/router";
 import { queryClient } from "./api/query-client";
 import { registerServiceWorker } from "./register-service-worker";
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <MotionConfig reducedMotion="user">
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          <GlobalPullToRefresh />
           <RouterProvider router={router} />
         </AuthProvider>
       </QueryClientProvider>

@@ -10,13 +10,16 @@ import {
   findStaffingPlan,
   getStaffingAssignmentCandidates,
   getStaffingSchedule,
+  reorderStaffingMembers,
   updateStaffingAssignment,
 } from "../api/business-planning";
 import { getApiError } from "../api/api-errors";
-import { listOrganizations, listOrganizationUnits } from "../api/endpoints";
+import { listBusinessWorkTypes, listOrganizations, listOrganizationUnits, removeStaffingDayEntry, setStaffingDayEntry } from "../api/endpoints";
 import {
   AssignmentCandidateInspector,
   AssignmentEditor,
+  MemberDayRequirementPicker,
+  MemberWeekAssignmentPicker,
 } from "../components/business-planning/assignment-inspector";
 import { BusinessPlanningShell } from "../components/business-planning/business-planning-shell";
 import { ScheduleGrid } from "../components/business-planning/schedule-grid";
@@ -24,6 +27,8 @@ import { ScheduleMobileView } from "../components/business-planning/schedule-mob
 import type {
   StaffingAssignmentCandidate,
   StaffingSchedule,
+  StaffingScheduleMember,
+  StaffingScheduleRequirement,
 } from "../types/business-planning";
 import "../styles/business-planning.css";
 import "../styles/business-schedule.css";
@@ -34,6 +39,11 @@ type Notice = {
   undo?: { assignmentId: string };
 };
 
+type MemberDayTarget = {
+  member: StaffingScheduleMember;
+  date: string;
+};
+
 export function BusinessSchedulePage() {
   const { t } = useTranslation("business");
   const { organizationId = "" } = useParams();
@@ -41,6 +51,9 @@ export function BusinessSchedulePage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedRequirementId, setSelectedRequirementId] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [memberDayTarget, setMemberDayTarget] = useState<MemberDayTarget | null>(null);
+  const [memberWeekTarget, setMemberWeekTarget] = useState<StaffingScheduleMember | null>(null);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [replacingAssignmentId, setReplacingAssignmentId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
@@ -53,6 +66,15 @@ export function BusinessSchedulePage() {
   const contextRef = useRef("");
 
   const organizationsQuery = useQuery({ queryKey: ["organizations"], queryFn: listOrganizations });
+  const workTypesQuery = useQuery({
+    queryKey: ["organizations", organizationId, "work-types"],
+    queryFn: () => listBusinessWorkTypes(organizationId),
+    enabled: Boolean(organizationId),
+  });
+  const workTypeColors = useMemo(
+    () => new Map((workTypesQuery.data ?? []).map((workType) => [workType.id, workType.color])),
+    [workTypesQuery.data],
+  );
   const businessOrganizations = useMemo(
     () => (organizationsQuery.data ?? []).filter((item) => item.type === "BUSINESS"),
     [organizationsQuery.data],
@@ -88,6 +110,9 @@ export function BusinessSchedulePage() {
   useEffect(() => {
     contextRef.current = contextKey;
     setSelectedRequirementId(null);
+    setSelectedMemberId(null);
+    setMemberDayTarget(null);
+    setMemberWeekTarget(null);
     setSelectedAssignmentId(null);
     setReplacingAssignmentId(null);
     setSelectedDate(weekStart);
@@ -134,6 +159,10 @@ export function BusinessSchedulePage() {
     enabled: Boolean(plan && schedule && selectedRequirementId && canManage),
     retry: false,
   });
+  const selectedMemberCandidate = selectedMemberId
+    ? candidatesQuery.data?.data.candidates.find((candidate) =>
+      candidate.membershipId === selectedMemberId) ?? null
+    : null;
 
   const updateSearchContext = (nextUnitId: string, nextWeekStart: string) => {
     const next = new URLSearchParams(searchParams);
@@ -222,7 +251,51 @@ export function BusinessSchedulePage() {
         undo: created ? { assignmentId: created.assignmentId } : undefined,
       });
       setSelectedRequirementId(null);
+      setSelectedMemberId(null);
       setReplacingAssignmentId(null);
+    } catch (cause) {
+      await handleMutationError(cause, startContext);
+    } finally {
+      if (contextRef.current === startContext) setMutationBusy(false);
+    }
+  };
+
+  const assignMemberWeek = async (requirements: StaffingScheduleRequirement[]) => {
+    if (!plan || !schedule || !memberWeekTarget || mutationBusy || requirements.length === 0) return;
+    const startContext = contextRef.current;
+    const requirementIds = requirements.map((requirement) => requirement.requirementId).sort();
+    const semanticKey = `assign-week:${plan.planId}:${schedule.draftRevision}:${memberWeekTarget.membershipId}:${requirementIds.join(",")}`;
+    setMutationBusy(true);
+    try {
+      await batchStaffingAssignments(
+        organizationId,
+        plan.planId,
+        currentEtag(schedule),
+        stableOperationKey(operationKeys.current, semanticKey),
+        requirements.map((requirement) => ({
+          operation: "CREATE" as const,
+          assignmentId: null,
+          create: {
+            requirementId: requirement.requirementId,
+            membershipId: memberWeekTarget.membershipId,
+            startTime: requirement.startTime,
+            endTime: requirement.endTime,
+          },
+          update: null,
+        })),
+      );
+      operationKeys.current.delete(semanticKey);
+      await refreshSchedule();
+      if (contextRef.current !== startContext) return;
+      setNotice({
+        type: "success",
+        message: t("planning.schedule.assignedWeekConfirmation", {
+          name: memberWeekTarget.displayName,
+          count: requirements.length,
+          defaultValue: "{{name}} assigned on {{count}} day(s).",
+        }),
+      });
+      setMemberWeekTarget(null);
     } catch (cause) {
       await handleMutationError(cause, startContext);
     } finally {
@@ -268,6 +341,46 @@ export function BusinessSchedulePage() {
       if (contextRef.current !== startContext) return;
       setSelectedAssignmentId(null);
       setNotice({ type: "success", message: t("planning.schedule.assignmentCancelled") });
+    } catch (cause) {
+      await handleMutationError(cause, startContext);
+    } finally {
+      if (contextRef.current === startContext) setMutationBusy(false);
+    }
+  };
+
+  const setMemberDayStatus = async (type: "REST_DAY" | "SICK" | "VACATION") => {
+    if (!memberDayTarget || mutationBusy) return;
+    const startContext = contextRef.current;
+    setMutationBusy(true);
+    try {
+      await setStaffingDayEntry(organizationId, memberDayTarget.member.membershipId,
+        memberDayTarget.date, type);
+      await refreshSchedule();
+      if (contextRef.current !== startContext) return;
+      setMemberDayTarget(null);
+      setSelectedMemberId(null);
+      setSelectedRequirementId(null);
+      setNotice({ type: "success", message: t(`planning.schedule.status.${type}`) });
+    } catch (cause) {
+      await handleMutationError(cause, startContext);
+    } finally {
+      if (contextRef.current === startContext) setMutationBusy(false);
+    }
+  };
+
+  const removeMemberDayStatus = async () => {
+    if (!memberDayTarget || mutationBusy) return;
+    const startContext = contextRef.current;
+    setMutationBusy(true);
+    try {
+      await removeStaffingDayEntry(organizationId, memberDayTarget.member.membershipId,
+        memberDayTarget.date);
+      await refreshSchedule();
+      if (contextRef.current !== startContext) return;
+      setMemberDayTarget(null);
+      setSelectedMemberId(null);
+      setSelectedRequirementId(null);
+      setNotice({ type: "success", message: "Day status cleared" });
     } catch (cause) {
       await handleMutationError(cause, startContext);
     } finally {
@@ -354,16 +467,35 @@ export function BusinessSchedulePage() {
             <>
               <ScheduleGrid
                 schedule={schedule}
+                workTypeColors={workTypeColors}
                 selectedRequirementId={selectedRequirementId}
                 canManage={canManage}
                 onOpenRequirement={(requirement, trigger) => {
                   setCandidateReturnFocus(trigger);
+                  setSelectedMemberId(null);
                   setReplacingAssignmentId(null);
                   setSelectedRequirementId(requirement.requirementId);
+                }}
+                onOpenMemberDay={(member, date, trigger) => {
+                  setCandidateReturnFocus(trigger);
+                  setSelectedMemberId(member.membershipId);
+                  setMemberDayTarget({ member, date });
+                }}
+                onOpenMemberWeek={(member, trigger) => {
+                  setCandidateReturnFocus(trigger);
+                  setSelectedRequirementId(null);
+                  setSelectedMemberId(null);
+                  setMemberDayTarget(null);
+                  setMemberWeekTarget(member);
                 }}
                 onEditAssignment={(assignment, trigger) => {
                   setEditorReturnFocus(trigger);
                   setSelectedAssignmentId(assignment.assignmentId);
+                }}
+                onReorderMembers={(membershipIds) => {
+                  void reorderStaffingMembers(organizationId, membershipIds)
+                    .then(() => refreshSchedule())
+                    .catch((cause) => void handleMutationError(cause, contextRef.current));
                 }}
               />
               <ScheduleMobileView
@@ -374,6 +506,7 @@ export function BusinessSchedulePage() {
                 onDateChange={setSelectedDate}
                 onOpenRequirement={(requirement, trigger) => {
                   setCandidateReturnFocus(trigger);
+                  setSelectedMemberId(null);
                   setReplacingAssignmentId(null);
                   setSelectedRequirementId(requirement.requirementId);
                 }}
@@ -389,20 +522,68 @@ export function BusinessSchedulePage() {
       ) : null}
 
       <AssignmentCandidateInspector
-        open={Boolean(selectedRequirement)}
+        open={Boolean(selectedRequirement) && !memberDayTarget}
         requirement={selectedRequirement}
         replacingAssignment={replacingAssignment}
         data={candidatesQuery.data?.data ?? null}
         loading={candidatesQuery.isLoading || candidatesQuery.isFetching}
         error={candidatesQuery.isError ? getApiError(candidatesQuery.error).message : null}
         busy={mutationBusy}
+        preferredMembershipId={selectedMemberId}
         returnFocus={candidateReturnFocus}
         onClose={() => {
           setSelectedRequirementId(null);
+          setSelectedMemberId(null);
           setReplacingAssignmentId(null);
         }}
         onRetry={() => void candidatesQuery.refetch()}
         onAssign={(candidate) => void assignCandidate(candidate)}
+      />
+      <MemberDayRequirementPicker
+        open={Boolean(memberDayTarget)}
+        memberName={memberDayTarget?.member.displayName ?? null}
+        date={memberDayTarget?.date ?? null}
+        requirements={(memberDayTarget
+          ? schedule?.days.find((day) => day.date === memberDayTarget.date)?.requirements
+          : []) ?? []}
+        selectedRequirementId={memberDayTarget ? selectedRequirementId : null}
+        checkingCandidate={candidatesQuery.isLoading || candidatesQuery.isFetching}
+        busy={mutationBusy}
+        returnFocus={candidateReturnFocus}
+        onClose={() => {
+          setMemberDayTarget(null);
+          setSelectedMemberId(null);
+        }}
+        onChoose={(requirement) => {
+          if (selectedRequirementId !== requirement.requirementId) {
+            setReplacingAssignmentId(null);
+            setSelectedRequirementId(requirement.requirementId);
+            return;
+          }
+          if (!selectedMemberCandidate || candidatesQuery.isLoading || candidatesQuery.isFetching) {
+            return;
+          }
+          setMemberDayTarget(null);
+          if (selectedMemberCandidate.eligibility === "ELIGIBLE") {
+            void assignCandidate(selectedMemberCandidate);
+            return;
+          }
+          setReplacingAssignmentId(null);
+        }}
+        onSetDayStatus={(type) => void setMemberDayStatus(type)}
+        currentDayStatus={memberDayTarget
+          ? schedule?.members.find((member) => member.membershipId === memberDayTarget.member.membershipId)
+            ?.dayStatuses.find((entry) => entry.date === memberDayTarget.date && entry.source === "MEMBER_DAY")?.status ?? null
+          : null}
+        onRemoveDayStatus={() => void removeMemberDayStatus()}
+      />
+      <MemberWeekAssignmentPicker
+        member={memberWeekTarget}
+        days={schedule?.days ?? []}
+        busy={mutationBusy}
+        returnFocus={candidateReturnFocus}
+        onClose={() => setMemberWeekTarget(null)}
+        onAssign={(requirements) => void assignMemberWeek(requirements)}
       />
       <AssignmentEditor
         assignment={selectedAssignment}
@@ -491,9 +672,16 @@ function findAssignmentByMember(schedule: StaffingSchedule | null, requirementId
 function stableOperationKey(store: Map<string, string>, semanticKey: string) {
   const existing = store.get(semanticKey);
   if (existing) return existing;
-  const value = `web-${crypto.randomUUID()}`;
+  const value = `web-${operationId()}`;
   store.set(semanticKey, value);
   return value;
+}
+
+function operationId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = new Uint32Array(4);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(8, "0")).join("-");
 }
 
 function currentEtag(schedule: StaffingSchedule) {

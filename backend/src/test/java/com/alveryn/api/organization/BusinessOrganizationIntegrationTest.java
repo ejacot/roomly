@@ -175,10 +175,24 @@ class BusinessOrganizationIntegrationTest {
         Long.class, organizationId, unitId);
 
     mockMvc.perform(put("/api/organizations/{id}/members/{memberId}", organizationId, memberId)
-            .header(HttpHeaders.AUTHORIZATION, token(owner)).contentType(MediaType.APPLICATION_JSON)
-            .content("{\"firstName\":\"Ion\",\"lastName\":\"Test\",\"email\":\"later@example.com\"}"))
+        .header(HttpHeaders.AUTHORIZATION, token(owner)).contentType(MediaType.APPLICATION_JSON)
+        .content("{\"firstName\":\"Ion\",\"lastName\":\"Test\",\"email\":\"later@example.com\"}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(memberId))
+        .andExpect(jsonPath("$.data.status").value("ACTIVE"))
         .andExpect(jsonPath("$.data.accessState").value("INVITED"));
+
+    String secondRequirementId = id(mockMvc.perform(post(
+            "/api/organizations/{id}/staffing/requirements", organizationId)
+            .header(HttpHeaders.AUTHORIZATION, token(owner)).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"unitId\":\"" + unitId + "\",\"workTypeId\":\"" + workTypeId
+                + "\",\"date\":\"2026-08-11\",\"requiredWorkers\":1}"))
+        .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    mockMvc.perform(post(
+            "/api/organizations/{id}/staffing/requirements/{requirement}/assignments",
+            organizationId, secondRequirementId)
+            .header(HttpHeaders.AUTHORIZATION, token(owner)).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"membershipId\":\"" + memberId + "\"}"))
+        .andExpect(status().isCreated());
 
     authService.issueVerifiedSession(employee);
     mockMvc.perform(get("/api/organizations").header(HttpHeaders.AUTHORIZATION, token(employee)))

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Clock3, Ruler, Tag, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -12,7 +12,6 @@ import {
   type BusinessWorkTypePayload,
 } from "../api/endpoints";
 import { getApiError } from "../api/api-errors";
-import { SettingsNavigationHeader } from "../components/settings/settings-navigation-header";
 import { SettingsConfirmDialog } from "../components/settings/settings-confirm-dialog";
 import { SettingsSection } from "../components/settings/settings-section";
 import { SettingsEmptyState } from "../components/settings/settings-empty-state";
@@ -27,6 +26,7 @@ import type {
   BusinessWorkType,
 } from "../types/business";
 import { BusinessManagementShell } from "../components/business-planning/business-management-shell";
+import "../styles/business-work-types.css";
 type Mode = { key: string; method: BusinessCalculationMethod; icon: ReactNode };
 const modes: Mode[] = [
   {
@@ -50,6 +50,12 @@ const modes: Mode[] = [
     icon: <Tag className="h-5 w-5" />,
   },
 ];
+const workTypeColorPalette = ["#10b981", "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#0891b2", "#65a30d", "#d97706"];
+
+export function nextAvailableWorkTypeColor(workTypes: BusinessWorkType[]) {
+  const used = new Set(workTypes.map((workType) => workType.color.toLowerCase()));
+  return workTypeColorPalette.find((color) => !used.has(color)) ?? workTypeColorPalette[workTypes.length % workTypeColorPalette.length];
+}
 export function BusinessWorkTypeEditorPage() {
   return <BusinessManagementShell><BusinessWorkTypeEditorContent /></BusinessManagementShell>;
 }
@@ -61,6 +67,17 @@ function BusinessWorkTypeEditorContent() {
   const { t } = useTranslation(["business", "settings", "common"]);
   const client = useQueryClient();
   const categoryCreation = search.get("category") === "true";
+  const workTypesPath = `/business/${organizationId}/work-types`;
+  const requestedReturnPath = search.get("returnTo");
+  const hasReturnPath = isSafeReturnPath(requestedReturnPath, organizationId);
+  const returnPath = hasReturnPath
+    ? requestedReturnPath!
+    : workTypesPath;
+  const returnScrollY = parseReturnScroll(search.get("returnScroll"));
+  const returnToOrigin = () => navigate(
+    returnPath,
+    returnScrollY === null ? undefined : { state: { restoreScrollY: returnScrollY } },
+  );
   const selectedMode = modes.find((v) => v.key === search.get("mode"));
   const requestedParent = search.get("parentId") ?? "";
   const detail = useQuery({
@@ -92,13 +109,14 @@ function BusinessWorkTypeEditorContent() {
     [teamwork, setTeamwork] = useState(false),
     [extraPay, setExtraPay] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const colorWasChosen = useRef(false);
   const [childEditor, setChildEditor] = useState<
     BusinessWorkType | null | undefined
   >(undefined);
   useEffect(() => {
     const v = detail.data;
     if (!v) return;
-    setName(v.name);
+    setName(editableFullName(v));
     setCode(v.code);
     setUnitId(v.unitId ?? "");
     setParentId(v.parentId ?? "");
@@ -124,6 +142,7 @@ function BusinessWorkTypeEditorContent() {
     setCode("");
     setUnitId("");
     setParentId(requestedParent);
+    colorWasChosen.current = false;
     setColor("#10b981");
     setUnitLabel("");
     setUnitSymbol("");
@@ -137,6 +156,10 @@ function BusinessWorkTypeEditorContent() {
     setTeamwork(false);
     setExtraPay(false);
   }, [workTypeId, requestedParent]);
+  useEffect(() => {
+    if (workTypeId || colorWasChosen.current || !all.data) return;
+    setColor(nextAvailableWorkTypeColor(all.data));
+  }, [all.data, workTypeId]);
   const isCategory = categoryCreation || Boolean(detail.data?.compositeEnabled);
   const children = (all.data ?? []).filter((v) => v.parentId === workTypeId);
   const requestedParentType = (all.data ?? []).find(
@@ -154,8 +177,8 @@ function BusinessWorkTypeEditorContent() {
   const payload = (): BusinessWorkTypePayload => ({
     unitId: unitId || null,
     parentId: parentId || null,
-    code: code.trim().toUpperCase() || generatedCode(name),
-    name: name.trim(),
+    code: code.trim().toUpperCase(),
+    name: name.trim() || code.trim().toUpperCase(),
     color,
     defaultStartTime: defaultStartTime || null,
     defaultEndTime: defaultEndTime || null,
@@ -184,16 +207,19 @@ function BusinessWorkTypeEditorContent() {
       await client.invalidateQueries({
         queryKey: ["staffing", organizationId, "types"],
       });
-      navigate(
-        value.compositeEnabled
-          ? `/business/${organizationId}/work-types/${value.id}`
-          : `/business/${organizationId}/work-types`,
-      );
+      await client.invalidateQueries({
+        queryKey: ["organizations", organizationId, "work-types"],
+      });
+      if (hasReturnPath) {
+        returnToOrigin();
+        return;
+      }
+      navigate(value.compositeEnabled ? `/business/${organizationId}/work-types/${value.id}` : returnPath);
     },
   });
   const remove = useMutation({
     mutationFn: () => deactivateBusinessWorkType(organizationId, workTypeId!),
-    onSuccess: () => navigate(`/business/${organizationId}/work-types`),
+    onSuccess: returnToOrigin,
   });
   if (!workTypeId && requestedParent && all.isLoading) {
     return (
@@ -208,7 +234,7 @@ function BusinessWorkTypeEditorContent() {
             ? "workTypes.chooseCategoryMode"
             : "workTypes.chooseMode",
         )}
-        back={() => navigate(`/business/${organizationId}/work-types`)}
+        back={returnToOrigin}
         t={t}
       >
         <div className="space-y-3">
@@ -247,7 +273,7 @@ function BusinessWorkTypeEditorContent() {
         detail.data?.name ??
         t(isCategory ? "workTypes.categoryTitle" : "workTypes.newTitle")
       }
-      back={() => navigate(`/business/${organizationId}/work-types`)}
+      back={returnToOrigin}
       t={t}
     >
       <form
@@ -260,11 +286,20 @@ function BusinessWorkTypeEditorContent() {
         <SettingsSection title={t("workTypes.nameSection")}>
           <div className="space-y-3">
             <Input
-              label={t(isCategory ? "workTypes.categoryName" : "planner.name")}
+              label={t("workTypeEditor.shortName")}
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              maxLength={20}
+              required
+              placeholder={t("workTypeEditor.shortNamePlaceholder")}
+            />
+            <Input
+              label={t(isCategory ? "workTypes.categoryName" : "workTypeEditor.fullName")}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("workTypeEditor.namePlaceholder")}
             />
+            <p className="text-xs leading-5 text-white/45">{t("workTypeEditor.nameHint")}</p>
             {!isCategory && selectedParentType ? (
               <div className="rounded-[22px] border border-emerald-400/15 bg-emerald-400/[0.07] px-4 py-3">
                 <span className="block text-xs text-white/45">
@@ -374,7 +409,10 @@ function BusinessWorkTypeEditorContent() {
                   type="color"
                   aria-label={t("workTypeEditor.color")}
                   value={color}
-                  onChange={(e) => setColor(e.target.value)}
+                  onChange={(e) => {
+                    colorWasChosen.current = true;
+                    setColor(e.target.value);
+                  }}
                   className="h-12 w-12 cursor-pointer overflow-hidden rounded-full border-2 border-white/20 bg-transparent p-0"
                 />
               </div>
@@ -450,14 +488,13 @@ function BusinessWorkTypeEditorContent() {
                 )
           }
           submitDisabled={
-            !name.trim() ||
+            !code.trim() ||
             (effectiveMethod === "UNITS_PER_HOUR_BASED" &&
               !isCategory &&
               !Number(unitsPerHour)) ||
             (effectiveMethod === "UNIT_BASED" && !isCategory && !Number(rate)) ||
-            (effectiveMethod === "TIME_BASED" &&
-              !isCategory &&
-              Boolean(defaultStartTime) !== Boolean(defaultEndTime))
+            (effectiveMethod === "TIME_BASED" && !isCategory &&
+              defaultEndTime && !defaultStartTime)
           }
           onDelete={workTypeId ? () => setConfirmDeactivate(true) : undefined}
           deleteLabel={
@@ -468,15 +505,15 @@ function BusinessWorkTypeEditorContent() {
       </form>
       <SettingsConfirmDialog
         open={confirmDeactivate}
-        title={t("workTypes.deactivateConfirmTitle", {
-          defaultValue: "Deactivate work type?",
+        title={t("workTypes.deleteConfirmTitle", {
+          defaultValue: "Delete work type?",
         })}
-        description={t("workTypes.deactivateConfirmDescription", {
+        description={t("workTypes.deleteConfirmDescription", {
           defaultValue: isCategory
-            ? "The category and all work types inside it will become inactive. Existing schedule history is kept."
-            : "The work type will no longer be available for new schedules. Existing schedule history is kept.",
+            ? "An empty category is deleted. A category with work types is deactivated, so existing schedule history remains available."
+            : "An unused work type is deleted. If it is already used in a plan, it is deactivated so existing schedule history remains available.",
         })}
-        confirmLabel={t("workTypes.deactivate")}
+        confirmLabel={t("settings:workTypeEditor.delete")}
         pending={remove.isPending}
         onCancel={() => setConfirmDeactivate(false)}
         onConfirm={() => remove.mutate()}
@@ -511,12 +548,14 @@ function Shell({
   t: (key: string) => string;
 }) {
   return (
-    <div className="mx-auto w-full max-w-[560px] space-y-6 pb-10 pt-8">
-      <SettingsNavigationHeader
-        title={title}
-        backLabel={t("back")}
-        onBack={back}
-      />
+    <div className="business-admin business-work-type-editor mx-auto w-full max-w-[760px] pb-10">
+      <header className="business-work-type-editor__header">
+        <button type="button" className="business-admin__secondary" onClick={back}>← {t("back")}</button>
+        <div>
+          <p>WORK TYPES</p>
+          <h1>{title}</h1>
+        </div>
+      </header>
       {children}
     </div>
   );
@@ -573,7 +612,8 @@ function BusinessChildWorkTypeDialog({
   onSaved: () => Promise<void>;
   t: ReturnType<typeof useTranslation>["t"];
 }) {
-  const [name, setName] = useState(value?.name ?? "");
+  const [code, setCode] = useState(value?.code ?? "");
+  const [name, setName] = useState(editableFullName(value));
   const [breakMinutes, setBreakMinutes] = useState(
     String(value?.defaultBreakMinutes ?? 30),
   );
@@ -588,8 +628,8 @@ function BusinessChildWorkTypeDialog({
   const childPayload = (): BusinessWorkTypePayload => ({
     unitId: parent.unitId,
     parentId: parent.id,
-    code: value?.code ?? generatedCode(name),
-    name: name.trim(),
+    code: code.trim().toUpperCase(),
+    name: name.trim() || code.trim().toUpperCase(),
     color: parent.color,
     defaultStartTime: null,
     defaultEndTime: null,
@@ -621,7 +661,7 @@ function BusinessChildWorkTypeDialog({
     onSuccess: onSaved,
   });
   const invalid =
-    !name.trim() ||
+    !code.trim() ||
     (method === "UNITS_PER_HOUR_BASED" &&
       !(Number(unitsPerHour.replace(",", ".")) > 0)) ||
     (method === "UNIT_BASED" &&
@@ -662,7 +702,14 @@ function BusinessChildWorkTypeDialog({
           }}
         >
           <Input
-            label={t("settings:workTypeFormulas.fields.name")}
+            label={t("business:workTypeEditor.shortName")}
+            value={code}
+            maxLength={20}
+            required
+            onChange={(event) => setCode(event.target.value.toUpperCase())}
+          />
+          <Input
+            label={t("business:workTypeEditor.fullName")}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -744,19 +791,19 @@ function BusinessChildWorkTypeDialog({
   );
 }
 
-function generatedCode(value: string) {
-  const base = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .map((part) => part.slice(0, 3))
-    .join("")
-    .toUpperCase()
-    .slice(0, 14);
-  return `${base || "WORK"}${Date.now().toString(36).slice(-5).toUpperCase()}`.slice(
-    0,
-    20,
-  );
+function editableFullName(value: BusinessWorkType | null | undefined) {
+  // An older generated type stored its abbreviation as the name.  Show that
+  // to the manager as an intentionally empty optional full-name field.
+  return value && value.name !== value.code ? value.name : "";
+}
+
+function isSafeReturnPath(value: string | null, organizationId: string) {
+  return value?.startsWith(`/business/${organizationId}/plan/demand?`) ?? false;
+}
+
+function parseReturnScroll(value: string | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100_000
+    ? Math.round(parsed)
+    : null;
 }

@@ -24,6 +24,11 @@ public class StaffingAssignment extends BaseEntity {
   }
 
   public void cancel() { this.status = "CANCELLED"; }
+  /** Reuses the immutable assignment identity after a manager restores it. */
+  public void reactivate(LocalTime start, LocalTime end) {
+    updateTimes(start, end);
+    this.status = "ASSIGNED";
+  }
   public void updateTimes(LocalTime start, LocalTime end) {
     if (end != null && start == null) throw new IllegalArgumentException("assignment start time is required");
     this.startTime = start; this.endTime = end;

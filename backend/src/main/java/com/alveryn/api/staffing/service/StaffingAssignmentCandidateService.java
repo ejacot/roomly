@@ -232,7 +232,7 @@ public class StaffingAssignmentCandidateService {
           LocalTime end = rs.getObject("effective_end", LocalTime.class);
           UUID requirementId = rs.getObject("requirement_id", UUID.class);
           UUID unitId = rs.getObject("unit_id", UUID.class);
-          if (validInterval(start, end)) {
+          if (hasTimedInterval(start, end)) {
             candidate.weeklyMinutes += (int) Duration.between(start, end).toMinutes();
           }
           if (!date.equals(source.requirement.date)) return;
@@ -240,7 +240,7 @@ public class StaffingAssignmentCandidateService {
           candidate.assignedThisDay = true;
           if (requirementId.equals(source.requirement.id)) candidate.duplicate = true;
           if (!unitId.equals(source.plan.unitId)) candidate.otherUnitAssignment = true;
-          if (validInterval(start, end) && validInterval(source.requirement.start,
+          if (hasTimedInterval(start, end) && hasTimedInterval(source.requirement.start,
               source.requirement.end) && overlaps(start, end, source.requirement.start,
               source.requirement.end)) candidate.overlap = true;
         });
@@ -273,10 +273,11 @@ public class StaffingAssignmentCandidateService {
             "INVITED".equals(value.status) ? "INVITATION_PENDING" : "INACTIVE_MEMBERSHIP");
       }
       if (!source.requirement.workTypeActive
-          || !validInterval(source.requirement.start, source.requirement.end)) {
+          || !validRequirementInterval(source.requirement.start, source.requirement.end)) {
         value.ineligible("INVALID_REQUIREMENT", "INVALID_REQUIREMENT");
       }
-      if ("VACATION".equals(value.dayStatus) || "SICK".equals(value.dayStatus)) {
+      if ("REST_DAY".equals(value.dayStatus) || "VACATION".equals(value.dayStatus)
+          || "SICK".equals(value.dayStatus)) {
         value.ineligible("APPROVED_TIME_AWAY", "APPROVED_TIME_AWAY",
             Map.of("type", value.dayStatus));
       }
@@ -287,7 +288,8 @@ public class StaffingAssignmentCandidateService {
       }
       if (value.eligibility != Eligibility.INELIGIBLE) {
         value.availability = value.pendingRequest ? "PENDING_REQUEST" : "AVAILABLE";
-        value.reason("AVAILABLE_FOR_INTERVAL");
+        value.reason(source.requirement.start == null
+            ? "AVAILABLE_FOR_DAY" : "AVAILABLE_FOR_INTERVAL");
         if (value.pendingRequest) {
           value.warn("PENDING_REQUEST", Map.of("type",
               Objects.toString(value.pendingRequestType, "UNKNOWN")));
@@ -326,8 +328,13 @@ public class StaffingAssignmentCandidateService {
         value.missing());
   }
 
-  private static boolean validInterval(LocalTime start, LocalTime end) {
+  private static boolean hasTimedInterval(LocalTime start, LocalTime end) {
     return start != null && end != null && end.isAfter(start);
+  }
+
+  /** A requirement may be day-based or have a known start with an open end. */
+  private static boolean validRequirementInterval(LocalTime start, LocalTime end) {
+    return end == null || hasTimedInterval(start, end);
   }
 
   private static boolean overlaps(LocalTime firstStart, LocalTime firstEnd,

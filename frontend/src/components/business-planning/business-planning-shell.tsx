@@ -5,33 +5,24 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
-  Languages,
   Menu,
-  Moon,
   Settings2,
-  Sun,
   MapPinned,
   ShieldCheck,
   UsersRound,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { applyAppLanguage, i18n } from "../../i18n";
+import { i18n } from "../../i18n";
 import { getOrganizationAccess } from "../../api/endpoints";
-import {
-  getNativeLanguageName,
-  normalizeLanguage,
-  storeLanguagePreference,
-  SUPPORTED_LANGUAGES,
-} from "../../i18n/language";
+import { normalizeLanguage } from "../../i18n/language";
 import type { Organization, OrganizationUnit } from "../../types/business";
-import { applyAppTheme } from "../../utils/theme";
 import { AppLogo } from "../branding/app-logo";
-
-const THEME_KEY = "alveryn.publicTheme";
+import { APP_HOME_PATH } from "../../routes/app-paths";
+import { useOptionalWorkspace } from "../../contexts/workspace-context";
 
 type Props = {
   organizations: Organization[];
@@ -68,6 +59,8 @@ export function BusinessPlanningShell({
 }: Props) {
   const { t } = useTranslation("business");
   const navigate = useNavigate();
+  const workspace = useOptionalWorkspace();
+  const availableWorkspaces = workspace?.organizations ?? organizations;
   const locale = normalizeLanguage(i18n.resolvedLanguage);
   const weekLabel = formatWeek(weekStart, weekEnd, locale);
   const planningSearch = `?unit=${encodeURIComponent(unitId)}&week=${encodeURIComponent(weekStart)}`;
@@ -91,8 +84,9 @@ export function BusinessPlanningShell({
     <div className="business-planning">
       <div className="business-planning__grid" aria-hidden="true" />
       <header className="business-planning__topbar">
-        <Link to="/business" className="business-planning__brand" aria-label="Alveryn Business">
+        <Link to={`/business/${organizationId}/overview`} className="business-planning__brand" aria-label="Alveryn Business">
           <AppLogo wordmark />
+          <span className="business-planning__mobile-page-title">Business</span>
         </Link>
 
         <label className="business-planning__workspace-control">
@@ -101,8 +95,15 @@ export function BusinessPlanningShell({
             aria-label={t("planning.workspace.label")}
             value={`business:${organizationId}`}
             onChange={(event) => {
-              if (event.target.value === "personal") navigate("/today");
-              else onOrganizationChange(event.target.value.replace("business:", ""));
+              if (event.target.value === "personal") {
+                const personalWorkspace = availableWorkspaces.find((workspace) => workspace.type === "PERSONAL");
+                if (personalWorkspace) workspace?.setActiveWorkspaceId(personalWorkspace.id);
+                navigate(APP_HOME_PATH);
+                return;
+              }
+              const nextOrganizationId = event.target.value.replace("business:", "");
+              workspace?.setActiveWorkspaceId(nextOrganizationId);
+              onOrganizationChange(nextOrganizationId);
             }}
           >
             <option value="personal">{t("planning.workspace.personal")}</option>
@@ -141,8 +142,6 @@ export function BusinessPlanningShell({
         </div> : <div className="business-planning__section-label">{sectionLabel}</div>}
 
         <div className="business-planning__tools">
-          <BusinessLanguageSelector />
-          <BusinessThemeToggle />
           <button
             type="button"
             className="business-planning__tool business-planning__mobile-menu-trigger"
@@ -210,71 +209,6 @@ export function BusinessPlanningShell({
 
       <main className="business-planning__main">{children}</main>
     </div>
-  );
-}
-
-function BusinessLanguageSelector() {
-  const { t } = useTranslation("business");
-  const language = normalizeLanguage(i18n.resolvedLanguage);
-  return (
-    <label className="business-planning__tool business-planning__language">
-      <Languages aria-hidden="true" />
-      <span aria-hidden="true">{language.toUpperCase()}</span>
-      <select
-        aria-label={t("planning.language")}
-        value={language}
-        onChange={(event) => {
-          const next = normalizeLanguage(event.target.value);
-          storeLanguagePreference(next);
-          applyAppLanguage(next);
-        }}
-      >
-        {SUPPORTED_LANGUAGES.map((item) => (
-          <option key={item} value={item}>{getNativeLanguageName(item)}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function BusinessThemeToggle() {
-  const { t } = useTranslation("business");
-  const [theme, setTheme] = useState<"light" | "dark">(() =>
-    document.documentElement.dataset.theme === "dark" ? "dark" : "light",
-  );
-
-  useLayoutEffect(() => {
-    const restore = () => {
-      const saved = window.localStorage.getItem(THEME_KEY);
-      const next = saved === "light" || saved === "dark"
-        ? saved
-        : document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-      setTheme(next);
-      applyAppTheme(next === "dark" ? "DARK" : "LIGHT");
-    };
-    const visibility = () => { if (document.visibilityState === "visible") restore(); };
-    window.addEventListener("pageshow", restore);
-    document.addEventListener("visibilitychange", visibility);
-    return () => {
-      window.removeEventListener("pageshow", restore);
-      document.removeEventListener("visibilitychange", visibility);
-    };
-  }, []);
-
-  return (
-    <button
-      type="button"
-      className="business-planning__tool"
-      aria-label={t(theme === "dark" ? "planning.theme.light" : "planning.theme.dark")}
-      onClick={() => {
-        const next = theme === "dark" ? "light" : "dark";
-        setTheme(next);
-        window.localStorage.setItem(THEME_KEY, next);
-        applyAppTheme(next === "dark" ? "DARK" : "LIGHT");
-      }}
-    >
-      {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-    </button>
   );
 }
 

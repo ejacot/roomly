@@ -178,12 +178,18 @@ public class StaffingPlanDraftMutationService {
           StaffingRequirement requirement = requirement(authorized, normalized.requirementId());
           OrganizationMembership member = member(authorized, normalized.membershipId());
           validateRange(normalized.startTime(), normalized.endTime());
-          if (assignments.existsByRequirementIdAndMembershipId(requirement.getId(), member.getId())) {
+          if (assignments.existsByRequirementIdAndMembershipIdAndStatus(requirement.getId(),
+              member.getId(), "ASSIGNED")) {
             throw error(HttpStatus.CONFLICT, "BATCH_CONFLICT",
                 "Member is already assigned to this requirement");
           }
-          StaffingAssignment saved = assignments.saveAndFlush(new StaffingAssignment(requirement,
-              member, normalized.startTime(), normalized.endTime(), authorized.actor()));
+          StaffingAssignment saved = assignments.findByRequirementIdAndMembershipId(requirement.getId(),
+              member.getId()).map(existing -> {
+                existing.reactivate(normalized.startTime(), normalized.endTime());
+                return existing;
+              }).orElseGet(() -> assignments.save(new StaffingAssignment(requirement,
+                  member, normalized.startTime(), normalized.endTime(), authorized.actor())));
+          assignments.flush();
           audit(authorized.actor(), "MEMBER_ASSIGNED", "ASSIGNMENT", saved.getId(),
               requirement.getDate(), requirement.getWorkType().getCode());
           return Outcome.changed(saved.getId());
@@ -238,12 +244,18 @@ public class StaffingPlanDraftMutationService {
             StaffingRequirement requirement = requirement(authorized, input.requirementId());
             OrganizationMembership member = member(authorized, input.membershipId());
             validateRange(input.startTime(), input.endTime());
-            if (assignments.existsByRequirementIdAndMembershipId(requirement.getId(), member.getId())) {
+            if (assignments.existsByRequirementIdAndMembershipIdAndStatus(requirement.getId(),
+                member.getId(), "ASSIGNED")) {
               throw error(HttpStatus.CONFLICT, "BATCH_CONFLICT",
                   "Batch contains a duplicate assignment");
             }
-            StaffingAssignment value = assignments.saveAndFlush(new StaffingAssignment(
-                requirement, member, input.startTime(), input.endTime(), authorized.actor()));
+            StaffingAssignment value = assignments.findByRequirementIdAndMembershipId(requirement.getId(),
+                member.getId()).map(existing -> {
+                  existing.reactivate(input.startTime(), input.endTime());
+                  return existing;
+                }).orElseGet(() -> assignments.save(new StaffingAssignment(
+                    requirement, member, input.startTime(), input.endTime(), authorized.actor())));
+            assignments.flush();
             changed.add(value.getId());
           }
           case UPDATE -> {
@@ -422,8 +434,8 @@ public class StaffingPlanDraftMutationService {
   }
 
   private void validateRange(LocalTime start, LocalTime end) {
-    if ((start == null) != (end == null) || (start != null && !end.isAfter(start))) {
-      throw validation("startTime and endTime must form a positive interval");
+    if (end != null && (start == null || !end.isAfter(start))) {
+      throw validation("endTime requires an earlier startTime");
     }
   }
 
