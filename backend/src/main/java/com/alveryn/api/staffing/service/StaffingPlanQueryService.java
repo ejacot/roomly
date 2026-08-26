@@ -407,6 +407,24 @@ public class StaffingPlanQueryService {
     Map<UUID, AssignmentBuilder> assignments = new LinkedHashMap<>();
     Map<UUID, MemberBuilder> members = new LinkedHashMap<>();
     jdbc.query("""
+        select id, created_at, display_order,
+          coalesce(nullif(btrim(concat_ws(' ',first_name,last_name)),''),
+            'Member ' || left(id::text,8)) display_name,
+          membership_status
+        from organization_memberships
+        where organization_id=:organization and membership_status='ACTIVE'
+        order by display_order, created_at, id
+        """, params("organization", plan.organizationId), (RowCallbackHandler) rs -> {
+          try {
+            UUID membershipId = rs.getObject("id", UUID.class);
+            members.put(membershipId, new MemberBuilder(membershipId,
+                rs.getString("display_name"), rs.getString("membership_status"),
+                rs.getObject("created_at", OffsetDateTime.class), rs.getInt("display_order")));
+          } catch (SQLException exception) {
+            throw new IllegalStateException("Could not read organization members", exception);
+          }
+        });
+    jdbc.query("""
         select a.id assignment_id, r.id requirement_id, a.membership_id,
           coalesce(nullif(btrim(concat_ws(' ',m.first_name,m.last_name)),''),
             'Member ' || left(m.id::text,8)) member_display_name,
@@ -420,6 +438,7 @@ public class StaffingPlanQueryService {
         join staffing_assignments a on a.requirement_id=r.id
         join organization_memberships m on m.id=a.membership_id
         where d.plan_id=:plan and d.organization_id=:organization
+          and m.membership_status='ACTIVE'
         order by r.work_date, r.start_time nulls first, a.created_at, a.id
         """, params("plan", plan.id, "organization", plan.organizationId),
         (RowCallbackHandler) rs -> {
@@ -440,8 +459,7 @@ public class StaffingPlanQueryService {
                 rs.getObject("effective_end", LocalTime.class),
                 rs.getBoolean("interval_override"), effective, issueKeys)));
             members.computeIfAbsent(membershipId, ignored -> new MemberBuilder(membershipId,
-                memberDisplayName, membershipStatus))
-                .assignmentIds.add(id);
+                memberDisplayName, membershipStatus, null, Integer.MAX_VALUE)).assignmentIds.add(id);
           } catch (SQLException exception) {
             throw new IllegalStateException("Could not read staffing assignments", exception);
           }
@@ -500,12 +518,14 @@ public class StaffingPlanQueryService {
                     byRequirement.getOrDefault(requirement.requirementId(), List.of()),
                     requirement.issueKeys())).toList(), day.issueKeys())).toList();
     List<MemberResponse> memberResponses = members.values().stream()
-        .sorted(Comparator.comparing(value -> value.displayName))
+        .sorted(Comparator.comparingInt((MemberBuilder value) -> value.displayOrder)
+            .thenComparing(value -> value.createdAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(value -> value.id))
         .map(value -> new MemberResponse(value.id, value.displayName, value.status,
             Set.copyOf(value.assignmentIds), value.statuses.stream()
                 .sorted(Comparator.comparing(DayStatusResponse::date)
                     .thenComparing(DayStatusResponse::source))
-                .toList()))
+                .toList(), value.createdAt, value.displayOrder))
         .toList();
     return new ScheduleAssembly(days, memberResponses);
   }
@@ -762,10 +782,14 @@ public class StaffingPlanQueryService {
     final UUID id;
     final String displayName;
     final String status;
+    final OffsetDateTime createdAt;
+    final int displayOrder;
     final Set<UUID> assignmentIds = new LinkedHashSet<>();
     final List<DayStatusResponse> statuses = new ArrayList<>();
-    MemberBuilder(UUID id, String displayName, String status) {
-      this.id = id; this.displayName = displayName; this.status = status;
+    MemberBuilder(UUID id, String displayName, String status, OffsetDateTime createdAt,
+        int displayOrder) {
+      this.id = id; this.displayName = displayName; this.status = status; this.createdAt = createdAt;
+      this.displayOrder = displayOrder;
     }
   }
 

@@ -1,0 +1,39 @@
+.team-hours { display: grid; gap: 14px; border-top: 1px solid var(--bp-line); padding-top: 18px; }
+.business-people .business-admin__panel { border-radius: 0; }
+.business-people__list-panel { width: 100%; }
+.business-people__empty { margin: 0; padding: 42px 20px; color: var(--bp-muted); font-size: .78rem; text-align: center; }
+.business-employee-dialog { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 16px 24px; }
+.business-employee-dialog__backdrop { position: absolute; inset: 0; border: 0; background: rgba(13, 18, 17, .55); }
+.business-employee-dialog__panel { position: relative; z-index: 1; width: min(760px, 100%); max-height: min(calc(100% - 32px), 900px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; background: var(--bp-surface-strong); box-shadow: 0 24px 80px rgba(0, 0, 0, .28); }
+.business-employee-dialog__panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--bp-line); padding-bottom: 15px; }
+.business-employee-dialog__panel > header > button { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--bp-line-strong); color: var(--bp-muted); }
+.business-employee-dialog__panel > header > button svg { width: 17px; }
+.business-people__range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.team-hours__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.team-hours__header span { color: var(--bp-accent); font: 800 .58rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .13em; text-transform: uppercase; }
+.team-hours__header h3 { margin: 7px 0 0; font-size: 1rem; }
+.team-hours__header p { margin: 5px 0 0; color: var(--bp-muted); font-size: .68rem; }
+.team-hours__periods { display: flex; border: 1px solid var(--bp-line-strong); }
+.team-hours__periods button { min-height: 34px; border-right: 1px solid var(--bp-line); padding: 0 10px; color: var(--bp-muted); font-size: .65rem; font-weight: 800; }
+.team-hours__periods button:last-child { border-right: 0; }
+.team-hours__periods button[aria-pressed="true"] { background: var(--bp-green-soft); color: var(--bp-accent); }
+.team-hours__state { margin: 0; border: 1px dashed var(--bp-line-strong); padding: 12px; color: var(--bp-muted); font-size: .72rem; }
+.team-hours__state.is-error { border-color: color-mix(in srgb, var(--bp-danger) 55%, var(--bp-line)); background: var(--bp-danger-soft); color: var(--bp-danger); }
+.team-hours__totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--bp-line-strong); }
+.team-hours__totals > div { display: grid; gap: 5px; min-height: 70px; align-content: center; border-right: 1px solid var(--bp-line); padding: 10px; }
+.team-hours__totals > div:last-child { border-right: 0; }
+.team-hours__totals span { color: var(--bp-muted); font-size: .55rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.team-hours__totals strong { font: 800 .92rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.team-hours__days, .team-hours__sessions { border: 1px solid var(--bp-line-strong); }
+.team-hours__days > div, .team-hours__sessions > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 7px 10px; border-bottom: 1px solid var(--bp-line); padding: 10px; }
+.team-hours__days > div:last-child, .team-hours__sessions > div:last-of-type { border-bottom: 0; }
+.team-hours__days strong, .team-hours__sessions strong { font: 800 .64rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.team-hours__days span, .team-hours__sessions span { color: var(--bp-muted); font-size: .65rem; }
+.team-hours__days small, .team-hours__sessions small { grid-column: 2; color: var(--bp-warning); font-size: .58rem; }
+.team-hours__rollups { display: grid; gap: 7px; }
+.team-hours__rollups p { margin: 0; color: var(--bp-muted); font-size: .65rem; }
+.team-hours__rollups strong { display: inline-block; min-width: 72px; color: var(--bp-ink); }
+.team-hours__sessions h4 { margin: 0; border-bottom: 1px solid var(--bp-line); padding: 11px; font-size: .72rem; }
+.team-hours__sessions footer { display: flex; gap: 8px; padding: 10px; }
+.team-hours__sessions footer button { min-height: 34px; border: 1px solid var(--bp-line-strong); padding: 0 10px; color: var(--bp-ink); font-size: .63rem; font-weight: 800; }
+@media (max-width: 620px) { .business-employee-dialog { align-items: end; padding: 8px 0 0; } .business-employee-dialog__panel { width: 100%; max-height: calc(100% - 8px); padding-bottom: max(20px, env(safe-area-inset-bottom)); } .business-people__range { grid-template-columns: 1fr; } .team-hours__header { display: grid; } .team-hours__periods { justify-self: stretch; } .team-hours__periods button { flex: 1; } .team-hours__totals > div { padding: 8px; } .team-hours__days > div, .team-hours__sessions > div { grid-template-columns: 78px minmax(0, 1fr); } }

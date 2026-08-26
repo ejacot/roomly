@@ -34,6 +34,29 @@ class StaffingPlannerIntegrationTest {
     owner = users.saveAndFlush(owner);
   }
 
+  @Test void deletesUnusedWorkTypesAndDeactivatesTypesThatHavePlanHistory() throws Exception {
+    String orgId = create("/api/organizations", "{\"name\":\"Hotel\",\"timezone\":\"Europe/Berlin\"}");
+    String team = create("/api/organizations/" + orgId + "/units", "{\"name\":\"Housekeeping\",\"type\":\"TEAM\",\"checkInMode\":\"OPTIONAL\"}");
+    String unused = create("/api/organizations/" + orgId + "/staffing/work-types", "{\"unitId\":\"" + team + "\",\"code\":\"UNUSED\",\"name\":\"Unused\",\"color\":\"#10B981\"}");
+
+    mvc.perform(delete("/api/organizations/{org}/staffing/work-types/{type}", orgId, unused)
+            .header(HttpHeaders.AUTHORIZATION, token()))
+        .andExpect(status().isNoContent());
+    mvc.perform(get("/api/organizations/{org}/staffing/work-types", orgId)
+            .header(HttpHeaders.AUTHORIZATION, token()))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
+
+    String used = create("/api/organizations/" + orgId + "/staffing/work-types", "{\"unitId\":\"" + team + "\",\"code\":\"USED\",\"name\":\"Used\",\"color\":\"#10B981\"}");
+    create("/api/organizations/" + orgId + "/staffing/requirements", "{\"unitId\":\"" + team + "\",\"workTypeId\":\"" + used + "\",\"date\":\"2026-08-10\",\"requiredWorkers\":1}");
+
+    mvc.perform(delete("/api/organizations/{org}/staffing/work-types/{type}", orgId, used)
+            .header(HttpHeaders.AUTHORIZATION, token()))
+        .andExpect(status().isNoContent());
+    mvc.perform(get("/api/organizations/{org}/staffing/work-types", orgId)
+            .header(HttpHeaders.AUTHORIZATION, token()))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].active").value(false));
+  }
+
   @Test void coverageMovesFromUnderstaffedToCoveredAndOverstaffed() throws Exception {
     String orgId = create("/api/organizations", "{\"name\":\"Hotel\",\"timezone\":\"Europe/Berlin\"}");
     String team = create("/api/organizations/" + orgId + "/units", "{\"name\":\"Housekeeping\",\"type\":\"TEAM\",\"checkInMode\":\"OPTIONAL\"}");
@@ -58,10 +81,10 @@ class StaffingPlannerIntegrationTest {
         .andExpect(status().isCreated()).andExpect(jsonPath("$.data.length()").value(2))
         .andExpect(jsonPath("$.data[0].date").value("2026-08-11")).andExpect(jsonPath("$.data[1].date").value("2026-08-12"));
     mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId, first, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token()).contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"VACATION\"}"))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.type").value("VACATION"))
-        .andExpect(jsonPath("$.data.hasWorkConflict").value(true));
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
     mvc.perform(get("/api/organizations/{org}/staffing/day-entries", orgId).param("from", "2026-08-10").param("to", "2026-08-16").header(HttpHeaders.AUTHORIZATION, token()))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
     mvc.perform(post("/api/organizations/{org}/staffing/publish", orgId).header(HttpHeaders.AUTHORIZATION, token()).contentType(MediaType.APPLICATION_JSON).content("{\"from\":\"2026-08-10\",\"to\":\"2026-08-16\"}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.publishedRequirements").value(4));
     mvc.perform(get("/api/my/business-schedule").param("from", "2026-08-10").param("to", "2026-08-16").header(HttpHeaders.AUTHORIZATION, token()))
@@ -154,6 +177,33 @@ class StaffingPlannerIntegrationTest {
     mvc.perform(get("/api/organizations/{org}/staffing/day-entries", orgId).param("from", "2026-08-14").param("to", "2026-08-15").header(HttpHeaders.AUTHORIZATION, token()))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
         .andExpect(jsonPath("$.data[*].type", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("SICK"))));
+  }
+
+  @Test void preventsAssignmentsOnDayOffVacationAndSickDays() throws Exception {
+    String orgId = create("/api/organizations", "{\"name\":\"Day status hotel\",\"timezone\":\"Europe/Berlin\"}");
+    String team = create("/api/organizations/" + orgId + "/units", "{\"name\":\"Operations\",\"type\":\"TEAM\",\"checkInMode\":\"OPTIONAL\"}");
+    String member = create("/api/organizations/" + orgId + "/members", "{\"firstName\":\"Ana\",\"lastName\":\"Free\"}");
+    jdbc.update("update organization_memberships set membership_status='ACTIVE' where id=?",
+        java.util.UUID.fromString(member));
+    String type = create("/api/organizations/" + orgId + "/staffing/work-types",
+        "{\"unitId\":\"" + team + "\",\"code\":\"PF\",\"name\":\"Public floor\",\"color\":\"#10B981\"}");
+
+    String[] statuses = {"REST_DAY", "VACATION", "SICK"};
+    String[] dates = {"2026-08-10", "2026-08-11", "2026-08-12"};
+    for (int index = 0; index < statuses.length; index++) {
+      String requirement = id(createBody("/api/organizations/" + orgId + "/staffing/requirements",
+          "{\"unitId\":\"" + team + "\",\"workTypeId\":\"" + type + "\",\"date\":\""
+              + dates[index] + "\",\"requiredWorkers\":1}"));
+      mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
+              member, dates[index]).header(HttpHeaders.AUTHORIZATION, token())
+              .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"" + statuses[index] + "\"}"))
+          .andExpect(status().isOk());
+      mvc.perform(post("/api/organizations/{org}/staffing/requirements/{req}/assignments", orgId,
+              requirement).header(HttpHeaders.AUTHORIZATION, token())
+              .contentType(MediaType.APPLICATION_JSON).content("{\"membershipId\":\"" + member + "\"}"))
+          .andExpect(status().isConflict())
+          .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+    }
   }
 
   @Test void weeklyDraftRevisionTracksLogicalPlannerMutationsExactlyOnce() throws Exception {
@@ -255,13 +305,25 @@ class StaffingPlannerIntegrationTest {
     mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
             member, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token())
             .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"REST_DAY\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+    assertPlanRevision(orgId, team, "2026-08-10", 7);
+
+    mvc.perform(delete("/api/organizations/{org}/staffing/requirements/{req}/assignments/{assignment}",
+            orgId, requirement, assignment).header(HttpHeaders.AUTHORIZATION, token()))
         .andExpect(status().isOk());
     assertPlanRevision(orgId, team, "2026-08-10", 8);
+
     mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
             member, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token())
             .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"REST_DAY\"}"))
         .andExpect(status().isOk());
-    assertPlanRevision(orgId, team, "2026-08-10", 8);
+    assertPlanRevision(orgId, team, "2026-08-10", 9);
+    mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
+            member, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"REST_DAY\"}"))
+        .andExpect(status().isOk());
+    assertPlanRevision(orgId, team, "2026-08-10", 9);
 
     mvc.perform(delete("/api/organizations/{org}/staffing/requirements/{req}/assignments/{assignment}",
             orgId, requirement, assignment).header(HttpHeaders.AUTHORIZATION, token()))
@@ -334,7 +396,7 @@ class StaffingPlannerIntegrationTest {
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.approvalStatus").value("SUBMITTED"));
     String unpublishedRequirement = create("/api/organizations/" + orgId + "/staffing/requirements",
         "{\"unitId\":\"" + team + "\",\"workTypeId\":\"" + type
-            + "\",\"date\":\"2026-08-11\",\"requiredWorkers\":1}");
+            + "\",\"date\":\"2026-08-12\",\"requiredWorkers\":1}");
     mvc.perform(post("/api/organizations/{org}/staffing/requirements/{req}/assignments", orgId,
             unpublishedRequirement).header(HttpHeaders.AUTHORIZATION, token())
             .contentType(MediaType.APPLICATION_JSON)

@@ -33,7 +33,6 @@ type Props = {
   onQuickAdd: () => void;
   onDaySwipe?: (direction: -1 | 1) => void;
   onRhythmDaySelect?: (date: string) => void;
-  onWeekSwipe?: (direction: -1 | 1) => void;
   onCreateAbsence: (absenceTypeId: string) => void;
   onConfigureAbsences?: () => void;
   onDeleteAbsence?: (activityId: string) => void;
@@ -61,7 +60,6 @@ export function DashboardOverview({
   onQuickAdd,
   onDaySwipe,
   onRhythmDaySelect,
-  onWeekSwipe,
   onCreateAbsence,
   onConfigureAbsences,
   onDeleteAbsence,
@@ -181,7 +179,6 @@ export function DashboardOverview({
           previousWeekAverageGross={previousWeekAverageGross}
           flowCurrency={flowCurrency}
           onDaySelect={onRhythmDaySelect}
-          onWeekSwipe={onWeekSwipe}
         />
       </section>
     </div>

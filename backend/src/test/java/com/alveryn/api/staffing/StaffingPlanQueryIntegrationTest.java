@@ -58,6 +58,8 @@ class StaffingPlanQueryIntegrationTest {
   @Test
   void exposesOneStableDraftContractWithoutWritingSyntheticDays() throws Exception {
     Fixture fixture = fixture(2, true);
+    String unassignedMember = create("/api/organizations/" + fixture.organizationId + "/members",
+        "{\"firstName\":\"Bianca\",\"lastName\":\"Unassigned\"}");
     jdbc.update("""
         insert into staffing_member_day_entries(id,organization_id,membership_id,work_date,
           entry_type,notes,created_at,updated_at)
@@ -106,8 +108,10 @@ class StaffingPlanQueryIntegrationTest {
             .header(HttpHeaders.AUTHORIZATION, token(owner)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.days.length()").value(7))
-        .andExpect(jsonPath("$.data.members.length()").value(1))
-        .andExpect(jsonPath("$.data.members[0].displayName").value("Ana Query"))
+        .andExpect(jsonPath("$.data.members[*].displayName",
+            org.hamcrest.Matchers.hasItems("Ana Query", "Bianca Unassigned")))
+        .andExpect(jsonPath("$.data.members[?(@.membershipId == '" + unassignedMember
+            + "')].assignmentIds.length()").value(0))
         .andExpect(jsonPath("$.data.coverage.rawAssigned").value(1))
         .andExpect(jsonPath("$.data.coverage.effectiveAssigned").value(1))
         .andReturn().getResponse().getContentAsString();
@@ -630,11 +634,11 @@ class StaffingPlanQueryIntegrationTest {
             large.organizationId, large.planId).header(HttpHeaders.AUTHORIZATION, token(owner)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.days[0].requirements.length()").value(12))
-        .andExpect(jsonPath("$.data.members.length()").value(48));
+        .andExpect(jsonPath("$.data.members.length()").value(50));
     QueryCounts largeQueries = queryCounts();
 
-    assertThat(smallQueries.named()).isLessThanOrEqualTo(6);
-    assertThat(largeQueries.named()).isLessThanOrEqualTo(11);
+    assertThat(smallQueries.named()).isLessThanOrEqualTo(8);
+    assertThat(largeQueries.named()).isLessThanOrEqualTo(13);
     assertThat(largeQueries.named() - smallQueries.named()).isLessThanOrEqualTo(5);
     assertThat(largeQueries.hibernate()).isEqualTo(smallQueries.hibernate());
     assertThat(largeQueries.total() - smallQueries.total()).isLessThanOrEqualTo(5);

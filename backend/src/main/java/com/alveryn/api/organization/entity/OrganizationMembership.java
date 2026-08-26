@@ -55,6 +55,10 @@ public class OrganizationMembership extends BaseEntity {
   @Column(name = "joined_at")
   private OffsetDateTime joinedAt;
 
+  /** Shared planner row position, independent from account and employment state. */
+  @Column(name = "display_order", nullable = false)
+  private int displayOrder;
+
   public OrganizationMembership(Organization organization, UserAccount user, MembershipRole role) {
     this.organization = Objects.requireNonNull(organization, "organization is required");
     this.user = Objects.requireNonNull(user, "user is required");
@@ -74,7 +78,9 @@ public class OrganizationMembership extends BaseEntity {
     }
     this.invitedEmail = clean(invitedEmail);
     this.role = MembershipRole.EMPLOYEE;
-    this.status = this.invitedEmail == null ? MembershipStatus.ACTIVE : MembershipStatus.INVITED;
+    // Account access and operational employment are separate.  A pending
+    // invitation has no workspace access, but the person can be scheduled.
+    this.status = MembershipStatus.ACTIVE;
     this.accessState = this.invitedEmail == null ? MembershipAccessState.MANAGED
         : MembershipAccessState.INVITED;
   }
@@ -124,9 +130,13 @@ public class OrganizationMembership extends BaseEntity {
 
   public void reactivate() {
     if (status != MembershipStatus.SUSPENDED) return;
-    this.status = accessState == MembershipAccessState.INVITED
-        ? MembershipStatus.INVITED : MembershipStatus.ACTIVE;
+    this.status = MembershipStatus.ACTIVE;
     this.endedAt = null;
+  }
+
+  public void setDisplayOrder(int displayOrder) {
+    if (displayOrder < 0) throw new IllegalArgumentException("display order must be non-negative");
+    this.displayOrder = displayOrder;
   }
 
   public void updateDetails(String firstName, String lastName, String email) {

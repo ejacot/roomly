@@ -7,8 +7,14 @@ export function RouteScrollReset() {
   useLayoutEffect(() => {
     const previousRestoration = window.history.scrollRestoration;
     window.history.scrollRestoration = "manual";
+    const restoreScrollY = (location.state as { restoreScrollY?: unknown } | null)?.restoreScrollY;
+    const shouldRestore = typeof restoreScrollY === "number" && Number.isFinite(restoreScrollY) && restoreScrollY >= 0;
 
     const reset = () => {
+      if (shouldRestore) {
+        window.scrollTo({ top: restoreScrollY, left: 0, behavior: "auto" });
+        return;
+      }
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
       if (!navigator.userAgent.toLowerCase().includes("jsdom")) {

@@ -38,7 +38,6 @@ import type {
 import type { PersonalBusinessSchedule } from "../types/business";
 import {
   addDays,
-  addWeeks,
   formatLocalIsoDate,
   isSameDay,
   parseLocalIsoDate,
@@ -689,9 +688,6 @@ export function DashboardPage({
         }
         onRhythmDaySelect={(date) =>
           outletContext?.setSelectedDate?.(parseLocalIsoDate(date))
-        }
-        onWeekSwipe={(direction) =>
-          outletContext?.setSelectedDate?.(addWeeks(selectedDate, direction))
         }
         onCreateAbsence={(absenceTypeId) => {
           if (!absenceEmploymentId) {

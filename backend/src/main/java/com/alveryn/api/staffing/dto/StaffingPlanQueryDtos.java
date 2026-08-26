@@ -58,7 +58,8 @@ public final class StaffingPlanQueryDtos {
       String source, boolean pending) {}
 
   public record MemberResponse(UUID membershipId, String displayName, String membershipStatus,
-      Set<UUID> assignmentIds, List<DayStatusResponse> dayStatuses) {}
+      Set<UUID> assignmentIds, List<DayStatusResponse> dayStatuses, OffsetDateTime createdAt,
+      int displayOrder) {}
 
   public record ScheduleRequirementResponse(UUID requirementId, UUID planDayId,
       LocalDate date, UUID workTypeId, String workTypeCode, String workTypeName,

@@ -15,8 +15,9 @@ import com.alveryn.api.organization.repository.OrganizationRepository;
 import com.alveryn.api.testsupport.IntegrationTestDatabaseCleaner;
 import com.alveryn.api.user.entity.UserAccount;
 import com.alveryn.api.user.repository.UserAccountRepository;
-import java.util.UUID;
 import java.util.List;
+import java.time.LocalDate;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -522,6 +523,68 @@ class StaffingPlanDraftMutationIntegrationTest {
         select count(*) from staffing_assignments where requirement_id=?::uuid
           and membership_id=?::uuid
         """, Integer.class, fixture.requirementId(), memberD)).isZero();
+  }
+
+  @Test
+  void cancelledAssignmentCanBeAssignedAgainToTheSameMember() throws Exception {
+    Fixture fixture = fixture();
+    String original = createAssignment(fixture, fixture.memberId(), "reassign-original", 1);
+    String path = "/api/organizations/" + fixture.organizationId()
+        + "/staffing/plans/" + fixture.planId() + "/schedule/assignments/" + original;
+
+    mvc.perform(delete(path).header(HttpHeaders.AUTHORIZATION, token(owner))
+            .header(HttpHeaders.IF_MATCH, etag(fixture.planId(), 2)))
+        .andExpect(status().isOk()).andExpect(header().string(HttpHeaders.ETAG,
+            etag(fixture.planId(), 3)));
+
+    String restored = createAssignment(fixture, fixture.memberId(), "reassign-restored", 3);
+
+    assertThat(restored).isEqualTo(original);
+    assertThat(jdbc.queryForObject("""
+        select count(*) from staffing_assignments
+        where requirement_id=?::uuid and membership_id=?::uuid and assignment_status='ASSIGNED'
+        """, Integer.class, fixture.requirementId(), fixture.memberId())).isEqualTo(1);
+    assertThat(jdbc.queryForObject("""
+        select count(*) from staffing_assignments
+        where requirement_id=?::uuid and membership_id=?::uuid and assignment_status='CANCELLED'
+        """, Integer.class, fixture.requirementId(), fixture.memberId())).isZero();
+  }
+
+  @Test
+  void dayOffStatusesBlockSingleAndBatchAssignments() throws Exception {
+    Fixture fixture = fixture();
+    UUID ownerMembershipId = jdbc.queryForObject("""
+        select id from organization_memberships
+        where organization_id=?::uuid and user_id=?::uuid
+        """, UUID.class, fixture.organizationId(), owner.getId());
+    jdbc.update("""
+        insert into staffing_member_day_entries(id,organization_id,membership_id,work_date,
+          entry_type,created_by_membership_id,created_at,updated_at)
+        values(?,?,?,?,?,?,current_timestamp,current_timestamp)
+        """, UUID.randomUUID(), UUID.fromString(fixture.organizationId()),
+        UUID.fromString(fixture.memberId()), LocalDate.parse("2026-08-10"),
+        "REST_DAY", ownerMembershipId);
+
+    String assignment = "{\"requirementId\":\"" + fixture.requirementId()
+        + "\",\"membershipId\":\"" + fixture.memberId() + "\"}";
+    String assignmentPath = "/api/organizations/" + fixture.organizationId()
+        + "/staffing/plans/" + fixture.planId() + "/schedule/assignments";
+    mvc.perform(post(assignmentPath).header(HttpHeaders.AUTHORIZATION, token(owner))
+            .header(HttpHeaders.IF_MATCH, etag(fixture.planId(), 1))
+            .header("Idempotency-Key", "rest-day-single").contentType(MediaType.APPLICATION_JSON)
+            .content(assignment))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+
+    String batch = "{\"actions\":[{\"operation\":\"CREATE\",\"create\":"
+        + assignment + "}]}";
+    mvc.perform(post(assignmentPath + "/batch").header(HttpHeaders.AUTHORIZATION, token(owner))
+            .header(HttpHeaders.IF_MATCH, etag(fixture.planId(), 1))
+            .header("Idempotency-Key", "rest-day-batch").contentType(MediaType.APPLICATION_JSON)
+            .content(batch))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+    assertThat(revision(fixture.planId())).isEqualTo(1);
   }
 
   @Test

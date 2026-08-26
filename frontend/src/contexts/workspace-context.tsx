@@ -109,3 +109,12 @@ export function useWorkspace() {
   }
   return context;
 }
+
+/**
+ * Lets reusable Business layout components retain their standalone test and
+ * prototype support. The application itself continues to use useWorkspace,
+ * which intentionally requires the provider.
+ */
+export function useOptionalWorkspace() {
+  return useContext(WorkspaceContext);
+}

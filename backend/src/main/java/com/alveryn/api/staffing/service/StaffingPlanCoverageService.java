@@ -39,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class StaffingPlanCoverageService {
-  private static final Set<String> BLOCKING_DAY_TYPES = Set.of("VACATION", "SICK");
+  private static final Set<String> BLOCKING_DAY_TYPES = Set.of("REST_DAY", "VACATION", "SICK");
 
   private final NamedParameterJdbcTemplate jdbc;
 
@@ -315,22 +315,25 @@ public class StaffingPlanCoverageService {
           value.id, value.membershipId));
     }
     if ("SUSPENDED".equals(value.membershipStatus)) {
-      evaluation.blockAssignment(value.id, issue(IssueCode.SUSPENDED_MEMBER,
-          IssueSeverity.BLOCKING_CONFLICT, plan.id, requirement.date, requirement.id,
-          value.id, value.membershipId));
+      evaluation.ineffectiveAssignments.add(value.id);
+      evaluation.add(issue(IssueCode.SUSPENDED_MEMBER, IssueSeverity.WARNING, plan.id,
+          requirement.date, requirement.id, value.id, value.membershipId));
     } else if ("INVITED".equals(value.membershipStatus)) {
       evaluation.ineffectiveAssignments.add(value.id);
       evaluation.add(issue(IssueCode.INVITATION_PENDING, IssueSeverity.WARNING, plan.id,
           requirement.date, requirement.id, value.id, value.membershipId));
     } else if (!"ACTIVE".equals(value.membershipStatus)) {
-      evaluation.blockAssignment(value.id, issue(IssueCode.SUSPENDED_MEMBER,
-          IssueSeverity.BLOCKING_CONFLICT, plan.id, requirement.date, requirement.id,
-          value.id, value.membershipId));
+      evaluation.ineffectiveAssignments.add(value.id);
+      evaluation.add(issue(IssueCode.SUSPENDED_MEMBER, IssueSeverity.WARNING, plan.id,
+          requirement.date, requirement.id, value.id, value.membershipId));
     }
     String dayType = dayEntries.get(new MemberDate(value.membershipId, requirement.date));
     if (dayType != null && BLOCKING_DAY_TYPES.contains(dayType)) {
-      IssueCode code = "VACATION".equals(dayType) ? IssueCode.APPROVED_VACATION_CONFLICT
-          : IssueCode.APPROVED_SICK_CONFLICT;
+      IssueCode code = switch (dayType) {
+        case "REST_DAY" -> IssueCode.APPROVED_REST_DAY_CONFLICT;
+        case "VACATION" -> IssueCode.APPROVED_VACATION_CONFLICT;
+        default -> IssueCode.APPROVED_SICK_CONFLICT;
+      };
       evaluation.blockAssignment(value.id, issue(code, IssueSeverity.BLOCKING_CONFLICT,
           plan.id, requirement.date, requirement.id, value.id, value.membershipId));
     }
@@ -356,7 +359,8 @@ public class StaffingPlanCoverageService {
         for (int j = i + 1; j < group.size(); j++) {
           ComparableAssignment first = group.get(i);
           ComparableAssignment second = group.get(j);
-          if (!validInterval(first.start, first.end) || !validInterval(second.start, second.end)
+          if (!hasTimedInterval(first.start, first.end)
+              || !hasTimedInterval(second.start, second.end)
               || !overlaps(first.start, first.end, second.start, second.end)) continue;
           boolean duplicate = first.start.equals(second.start) && first.end.equals(second.end);
           IssueCode code = duplicate ? IssueCode.DUPLICATE_ASSIGNMENT
@@ -376,7 +380,7 @@ public class StaffingPlanCoverageService {
           Map<String, String> parameters = external
               ? Map.of("externalConflict", "true")
               : Map.of("assignmentPair", pair);
-          PlanningIssue issue = issue(code, IssueSeverity.BLOCKING_CONFLICT, plan.id,
+          PlanningIssue issue = issue(code, IssueSeverity.WARNING, plan.id,
               requirement.date, requirement.id, primary, assignment.membershipId, parameters);
           evaluation.addWithKey(issueKey, issue, affected.stream()
               .map(value -> current.get(value).requirementId).collect(java.util.stream.Collectors.toSet()));
@@ -477,6 +481,10 @@ public class StaffingPlanCoverageService {
   }
 
   private static boolean validInterval(LocalTime start, LocalTime end) {
+    return end == null || hasTimedInterval(start, end);
+  }
+
+  private static boolean hasTimedInterval(LocalTime start, LocalTime end) {
     return start != null && end != null && end.isAfter(start);
   }
 
@@ -686,6 +694,7 @@ public class StaffingPlanCoverageService {
     INCOMPATIBLE_OVERLAP,
     APPROVED_VACATION_CONFLICT,
     APPROVED_SICK_CONFLICT,
+    APPROVED_REST_DAY_CONFLICT,
     APPROVED_UNAVAILABLE_CONFLICT,
     UNDERCOVERAGE,
     OVERSTAFFING,

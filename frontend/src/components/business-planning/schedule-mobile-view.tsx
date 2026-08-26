@@ -102,7 +102,7 @@ export function ScheduleMobileView({
               >
                 <UserRoundPlus aria-hidden="true" />
                 <span>
-                  <strong>{requirement.workTypeCode} · {requirement.workTypeName}</strong>
+                  <strong>{requirement.workTypeName}</strong>
                   <small>{formatInterval(requirement.startTime, requirement.endTime)}</small>
                 </span>
                 <b>{requirement.coverage.effectiveAssigned}/{requirement.requiredWorkers}</b>
@@ -127,14 +127,14 @@ export function ScheduleMobileView({
                 data-conflict={assignment.issueKeys.length > 0 || undefined}
                 aria-label={t("planning.schedule.editAssignmentLabel", {
                   member: assignment.memberDisplayName,
-                  code: requirement.workTypeCode,
+                  code: requirement.workTypeName,
                   date: formatLongDate(day.date, locale),
                 })}
                 onClick={(event) => onEditAssignment(assignment, event.currentTarget)}
               >
                 <span>
                   <strong>{assignment.memberDisplayName}</strong>
-                  <small>{requirement.workTypeCode} · {formatInterval(assignment.startTime, assignment.endTime)}</small>
+                  <small>{requirement.workTypeName} · {formatInterval(assignment.startTime, assignment.endTime)}</small>
                 </span>
                 {assignment.issueKeys.length > 0 ? <AlertTriangle aria-label={t("planning.schedule.conflict")} /> : null}
               </button>

@@ -4,11 +4,16 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BusinessPlanningShell } from "./business-planning-shell";
+import { WorkspaceProvider } from "../../contexts/workspace-context";
 
 const getAccess = vi.fn();
 
 vi.mock("../../api/endpoints", () => ({
   getOrganizationAccess: (...args: unknown[]) => getAccess(...args),
+  listOrganizations: () => Promise.resolve([
+    { id: "personal-1", name: "Personal", type: "PERSONAL", timezone: "Europe/Berlin", role: "OWNER" },
+    { id: "org-1", name: "PUIU", type: "BUSINESS", timezone: "Europe/Berlin", role: "OWNER" },
+  ]),
 }));
 
 describe("BusinessPlanningShell", () => {
@@ -24,7 +29,7 @@ describe("BusinessPlanningShell", () => {
     render(
       <MemoryRouter initialEntries={["/business/org-1/plan/schedule"]}>
         <QueryClientProvider client={client}>
-          <BusinessPlanningShell
+          <WorkspaceProvider><BusinessPlanningShell
             organizations={[{ id: "org-1", name: "PUIU", type: "BUSINESS", timezone: "Europe/Berlin", role: "OWNER" }]}
             organizationId="org-1"
             units={[{ id: "unit-1", parentId: null, name: "Hotel", type: "LOCATION", checkInMode: "OPTIONAL", active: true, displayOrder: 0 }]}
@@ -38,7 +43,7 @@ describe("BusinessPlanningShell", () => {
             onCurrentWeek={vi.fn()}
           >
             <div>Schedule content</div>
-          </BusinessPlanningShell>
+          </BusinessPlanningShell></WorkspaceProvider>
         </QueryClientProvider>
       </MemoryRouter>,
     );

@@ -48,6 +48,20 @@ public class StaffingPlannerService {
         .map(this::workTypeResponse).toList();
   }
   @Transactional
+  public void reorderMembers(UUID organizationId, MemberOrderRequest request) {
+    access.require(organizationId, OrganizationPermission.MANAGE_SCHEDULE);
+    var members = memberships.findAllByOrganizationIdOrderByCreatedAtAsc(organizationId);
+    var requested = request.membershipIds();
+    var expectedIds = members.stream().map(OrganizationMembership::getId).collect(java.util.stream.Collectors.toSet());
+    var requestedIds = new LinkedHashSet<>(requested);
+    if (requestedIds.size() != requested.size() || !requestedIds.equals(expectedIds)) {
+      throw new IllegalArgumentException("member order must contain every organization member exactly once");
+    }
+    Map<UUID, OrganizationMembership> byId = members.stream()
+        .collect(java.util.stream.Collectors.toMap(OrganizationMembership::getId, value -> value));
+    for (int index = 0; index < requested.size(); index++) byId.get(requested.get(index)).setDisplayOrder(index);
+  }
+  @Transactional
   public WorkTypeResponse createWorkType(UUID organizationId, WorkTypeRequest request) {
     var unit = request.unitId() == null ? null : unit(organizationId, request.unitId());
     var manager = access.requireForUnit(organizationId, unit, OrganizationPermission.MANAGE_SCHEDULE);
@@ -66,16 +80,19 @@ public class StaffingPlannerService {
       }).value();
     }
     var value=new OrganizationWorkType(manager.getOrganization(), unit, request.code(),
-        request.name(), request.color(), request.defaultStartTime(), request.defaultEndTime(),
+        workTypeName(request), request.color(), request.defaultStartTime(), request.defaultEndTime(),
         request.defaultBreakMinutes() == null ? 30 : request.defaultBreakMinutes());
     configure(value,organizationId,unit,request,true);
     return workTypeResponse(workTypes.save(value));
   }
   @Transactional(readOnly=true) public WorkTypeResponse getWorkType(UUID organizationId,UUID workTypeId){access.require(organizationId,OrganizationPermission.VIEW_SCHEDULE,OrganizationPermission.MANAGE_SCHEDULE);return workTypeResponse(workType(organizationId,workTypeId));}
   @Transactional public WorkTypeResponse updateWorkType(UUID organizationId,UUID workTypeId,WorkTypeRequest request){var unit=request.unitId()==null?null:unit(organizationId,request.unitId());var manager=access.requireForUnit(organizationId,unit,OrganizationPermission.MANAGE_SCHEDULE);var value=workType(organizationId,workTypeId);workTypes.findByOrganizationIdAndCodeIgnoreCase(organizationId,request.code().trim()).filter(other->!other.getId().equals(workTypeId)).ifPresent(other->{throw new ConflictException("A work type with this code already exists in this organization");});var scopes=mutations.workTypeScopes(organizationId,workTypeId);return mutations.mutateScopes(organizationId,scopes,manager,null,()->{entityManager.refresh(value);String before=workTypeFingerprint(value);configure(value,organizationId,unit,request,request.active()==null||request.active());var response=workTypeResponse(value);return before.equals(workTypeFingerprint(value))?StaffingPlanMutationCoordinator.Change.unchanged(response):StaffingPlanMutationCoordinator.Change.changed(response,value.getId());}).value();}
+  @Transactional public void removeWorkType(UUID organizationId,UUID workTypeId){var value=workType(organizationId,workTypeId);var manager=access.requireForUnit(organizationId,value.getUnit(),OrganizationPermission.MANAGE_SCHEDULE);if(!requirements.existsByWorkTypeId(workTypeId)&&workTypes.findAllByParentId(workTypeId).isEmpty()){workTypes.delete(value);workTypes.flush();return;}deactivateWorkType(organizationId,workTypeId);}
   @Transactional public void deactivateWorkType(UUID organizationId,UUID workTypeId){var value=workType(organizationId,workTypeId);var manager=access.requireForUnit(organizationId,value.getUnit(),OrganizationPermission.MANAGE_SCHEDULE);var affected=new ArrayList<OrganizationWorkType>();affected.add(value);if(value.isCompositeEnabled())affected.addAll(workTypes.findAllByParentId(value.getId()));var scopes=affected.stream().flatMap(item->mutations.workTypeScopes(organizationId,item.getId()).stream()).distinct().toList();mutations.mutateScopes(organizationId,scopes,manager,null,()->{affected.forEach(entityManager::refresh);boolean changed=affected.stream().anyMatch(OrganizationWorkType::isActive);if(changed)affected.forEach(item->setActive(item,false));return changed?new StaffingPlanMutationCoordinator.Change<Void>(null,true,affected.stream().map(OrganizationWorkType::getId).collect(java.util.stream.Collectors.toSet())):StaffingPlanMutationCoordinator.Change.unchanged(null);});}
   private OrganizationWorkType workType(UUID organizationId,UUID id){return workTypes.findByIdAndOrganizationId(id,organizationId).orElseThrow(()->new NotFoundException("Organization work type",id));}
-  private void configure(OrganizationWorkType value,UUID organizationId,OrganizationUnit unit,WorkTypeRequest request,boolean active){var parent=request.parentId()==null?null:workType(organizationId,request.parentId());if(parent!=null&&(!parent.isCompositeEnabled()||!parent.isActive()))throw new IllegalArgumentException("parent must be an active category");if(parent!=null&&Boolean.TRUE.equals(request.compositeEnabled()))throw new IllegalArgumentException("a category cannot belong to another category");var calculationMethod=parent==null?(request.calculationMethod()==null?com.alveryn.api.worktype.entity.CalculationMethod.TIME_BASED:request.calculationMethod()):parent.getCalculationMethod();if(value.getId()!=null&&value.isCompositeEnabled()&&value.getCalculationMethod()!=calculationMethod&&!workTypes.findAllByParentId(value.getId()).isEmpty())throw new IllegalArgumentException("category calculation cannot change while it contains work types");value.configure(unit,parent,request.code(),request.name(),request.color(),request.defaultStartTime(),request.defaultEndTime(),request.defaultBreakMinutes()==null?30:request.defaultBreakMinutes(),calculationMethod,calculationMethod==com.alveryn.api.worktype.entity.CalculationMethod.UNIT_BASED?com.alveryn.api.worktype.entity.CompensationMethod.PER_UNIT:com.alveryn.api.worktype.entity.CompensationMethod.HOURLY,request.unitLabel(),request.unitSymbol(),request.unitsPerHour(),request.ratePerUnit(),request.currency(),Boolean.TRUE.equals(request.teamworkEnabled()),Boolean.TRUE.equals(request.extraPayEnabled()),Boolean.TRUE.equals(request.compositeEnabled()),request.displayOrder()==null?0:request.displayOrder(),active);}
+  private void configure(OrganizationWorkType value,UUID organizationId,OrganizationUnit unit,WorkTypeRequest request,boolean active){var parent=request.parentId()==null?null:workType(organizationId,request.parentId());if(parent!=null&&(!parent.isCompositeEnabled()||!parent.isActive()))throw new IllegalArgumentException("parent must be an active category");if(parent!=null&&Boolean.TRUE.equals(request.compositeEnabled()))throw new IllegalArgumentException("a category cannot belong to another category");var calculationMethod=parent==null?(request.calculationMethod()==null?com.alveryn.api.worktype.entity.CalculationMethod.TIME_BASED:request.calculationMethod()):parent.getCalculationMethod();if(value.getId()!=null&&value.isCompositeEnabled()&&value.getCalculationMethod()!=calculationMethod&&!workTypes.findAllByParentId(value.getId()).isEmpty())throw new IllegalArgumentException("category calculation cannot change while it contains work types");value.configure(unit,parent,request.code(),workTypeName(request),request.color(),request.defaultStartTime(),request.defaultEndTime(),request.defaultBreakMinutes()==null?30:request.defaultBreakMinutes(),calculationMethod,calculationMethod==com.alveryn.api.worktype.entity.CalculationMethod.UNIT_BASED?com.alveryn.api.worktype.entity.CompensationMethod.PER_UNIT:com.alveryn.api.worktype.entity.CompensationMethod.HOURLY,request.unitLabel(),request.unitSymbol(),request.unitsPerHour(),request.ratePerUnit(),request.currency(),Boolean.TRUE.equals(request.teamworkEnabled()),Boolean.TRUE.equals(request.extraPayEnabled()),Boolean.TRUE.equals(request.compositeEnabled()),request.displayOrder()==null?0:request.displayOrder(),active);}
+  /** A code is the required short label; a missing full name deliberately falls back to it. */
+  private String workTypeName(WorkTypeRequest request){return request.name()==null||request.name().isBlank()?request.code().trim().toUpperCase():request.name().trim();}
   private void setActive(OrganizationWorkType value,boolean active){value.configure(value.getUnit(),value.getParent(),value.getCode(),value.getName(),value.getColor(),value.getDefaultStartTime(),value.getDefaultEndTime(),value.getDefaultBreakMinutes(),value.getCalculationMethod(),value.getCompensationMethod(),value.getUnitLabel(),value.getUnitSymbol(),value.getUnitsPerHour(),value.getRatePerUnit(),value.getCurrency(),value.isTeamworkEnabled(),value.isExtraPayEnabled(),value.isCompositeEnabled(),value.getDisplayOrder(),active);}
   @Transactional(readOnly = true)
   public List<RequirementResponse> week(UUID organizationId, LocalDate from, LocalDate to) {
@@ -147,6 +164,7 @@ public class StaffingPlannerService {
     }
     return mutations.mutateScopes(organizationId, List.of(scope), manager, null, () -> {
       var requirement = requirement(organizationId, requirementId);
+      rejectAssignmentOnDayEntry(organizationId, member.getId(), requirement.getDate());
       var saved = assignments.save(new StaffingAssignment(requirement, member, request.startTime(),
           request.endTime(), manager));
       assignments.flush();
@@ -447,6 +465,11 @@ public class StaffingPlannerService {
       if(existing.isPresent() && sameDayEntry(existing.get(),request)) {
         return StaffingPlanMutationCoordinator.Change.unchanged(dayEntryResponse(existing.get()));
       }
+      if (!assignments.findAllByMembershipIdAndStatusAndRequirementDate(membershipId, "ASSIGNED", date)
+          .isEmpty()) {
+        throw new ConflictException("Remove the person's assignment before setting Day off, Vacation, or Sick.",
+            "DAY_STATUS_ASSIGNMENT_CONFLICT");
+      }
       var entry=existing.map(value->{value.update(request.type(),request.notes());return value;})
           .orElseGet(()->new StaffingMemberDayEntry(manager.getOrganization(),member,date,
               request.type(),request.notes(),manager));
@@ -465,6 +488,22 @@ public class StaffingPlannerService {
       UUID id=existing.get().getId(); dayEntries.delete(existing.get());
       return StaffingPlanMutationCoordinator.Change.changed(null,id);
     });
+  }
+  private void rejectAssignmentOnDayEntry(UUID organizationId, UUID membershipId, LocalDate date) {
+    dayEntries.findByOrganizationIdAndMembershipIdAndDate(organizationId, membershipId, date)
+        .ifPresent(entry -> {
+          throw new ConflictException("This person is marked " + dayEntryLabel(entry.getType())
+              + " for this day. Remove that status before assigning work.",
+              "DAY_STATUS_ASSIGNMENT_CONFLICT");
+        });
+  }
+  private static String dayEntryLabel(String type) {
+    return switch (type) {
+      case "REST_DAY" -> "Day off";
+      case "VACATION" -> "Vacation";
+      case "SICK" -> "Sick";
+      default -> "unavailable";
+    };
   }
   private OrganizationUnit unit(UUID organizationId, UUID unitId) { return units.findByIdAndOrganizationId(unitId, organizationId).orElseThrow(() -> new NotFoundException("Organization unit", unitId)); }
   private StaffingRequirement requirement(UUID organizationId,UUID id){return requirements.findByIdAndOrganizationId(id,organizationId).orElseThrow(()->new NotFoundException("Staffing requirement",id));}

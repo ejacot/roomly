@@ -16,7 +16,7 @@ export function SettingsProfileCard({
   ariaLabel
 }: Props) {
   return (
-    <Card variant="ambient" className="overflow-hidden">
+    <Card variant="ambient" className="settings-profile-card overflow-hidden">
       <Link
         to="/settings/profile"
         aria-label={ariaLabel}

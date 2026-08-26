@@ -110,6 +110,13 @@
 .business-review__publish-rail textarea { width: 100%; min-height: 78px; resize: vertical; border: 1px solid var(--bp-line-strong); background: var(--bp-surface); padding: 10px; color: var(--bp-ink); font-size: 0.7rem; }
 .business-review__publish-rail textarea:focus-visible { border-color: var(--bp-green); outline: 3px solid var(--bp-green-soft); }
 .business-review__publish-rail textarea:disabled { cursor: wait; opacity: 0.64; }
+.business-review__publish-notice { margin-top: 14px; border-left: 3px solid var(--bp-green); background: var(--bp-green-soft); padding: 10px 12px; color: var(--bp-ink); font-size: 0.65rem; font-weight: 750; line-height: 1.4; }
+.business-review__publish-notice.is-error { border-left-color: var(--bp-danger); background: var(--bp-danger-soft); color: var(--bp-danger); }
+.business-review__publish-notice.is-info { border-left-color: var(--bp-warning); background: var(--bp-warning-soft); color: var(--bp-warning); }
+.business-review__publish-requirements { margin-top: 14px; border-left: 3px solid var(--bp-warning); background: var(--bp-warning-soft); padding: 10px 12px; color: var(--bp-ink); }
+.business-review__publish-requirements strong { display: block; color: var(--bp-warning); font-size: 0.64rem; line-height: 1.35; }
+.business-review__publish-requirements ul { display: grid; gap: 4px; margin: 8px 0 0; padding-left: 15px; font-size: 0.61rem; line-height: 1.35; }
+.business-review__publish-requirements small { display: block; margin-top: 6px; color: var(--bp-muted); font-size: 0.58rem; }
 .business-review__publish-action { display: flex; width: 100%; min-height: 50px; align-items: center; justify-content: center; gap: 9px; margin-top: 16px; background: var(--bp-ink); color: var(--bp-bg); font-size: 0.76rem; font-weight: 850; }
 .business-review__publish-action:disabled { cursor: not-allowed; opacity: 0.36; }
 .business-review__publish-action svg { width: 16px; }

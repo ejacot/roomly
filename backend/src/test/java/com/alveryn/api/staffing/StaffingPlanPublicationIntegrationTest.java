@@ -243,7 +243,7 @@ class StaffingPlanPublicationIntegrationTest {
         """, String.class, fixture.planId())).containsExactly("LEGACY_PARTIAL", "ATOMIC_WEEKLY");
   }
 
-  @Test void invitedAssignmentIsSnapshottedButDoesNotCount() {
+  @Test void invitedOperationalEmployeeAssignmentIsSnapshottedAndCounts() {
     Fixture fixture = fixture("invited");
     UUID requirementId = requirement(fixture);
     var invited = memberships.saveAndFlush(new OrganizationMembership(fixture.organization(), "Invited",
@@ -259,8 +259,12 @@ class StaffingPlanPublicationIntegrationTest {
     jdbc.update("insert into staffing_assignments(id,requirement_id,membership_id,assignment_status,assigned_by_membership_id,created_at,updated_at) values(?,?,?,'ASSIGNED',?,current_timestamp,current_timestamp)",
         UUID.randomUUID(), requirementId, active.getId(), fixture.owner().getId());
     var canonical = coverage.calculate(fixture.organizationId(), fixture.unitId(), fixture.planId());
-    var result = publication.publishPlan(command(fixture, fixture.planRevision(), Set.of(
-        "INVITATION_PENDING:" + assignmentId), null, "invite-key"));
+    Set<String> acknowledged = canonical.issues().stream()
+        .filter(StaffingPlanCoverageService.PlanningIssue::acknowledgementRequired)
+        .map(StaffingPlanCoverageService.PlanningIssue::issueKey)
+        .collect(java.util.stream.Collectors.toSet());
+    var result = publication.publishPlan(command(fixture, fixture.planRevision(), acknowledged, null,
+        "invite-key"));
     assertThat(result.legacyCoverage().required()).isEqualTo(canonical.required());
     assertThat(result.legacyCoverage().assigned()).isEqualTo(canonical.effectiveAssigned());
     assertThat(result.legacyCoverage().percentage()).isEqualByComparingTo(canonical.percentage());
@@ -268,11 +272,9 @@ class StaffingPlanPublicationIntegrationTest {
         new StaffingPlanPublicationService.CanonicalCoverage(canonical.required(),
             canonical.assigned(), canonical.effectiveAssigned(), canonical.covered(),
             canonical.missing(), canonical.overstaffed(), canonical.percentage()));
-    assertThat(result.warningsAcknowledged()).containsExactly(
-        canonical.issues().stream().filter(StaffingPlanCoverageService.PlanningIssue::acknowledgementRequired)
-            .map(StaffingPlanCoverageService.PlanningIssue::issueKey).findFirst().orElseThrow());
+    assertThat(result.warningsAcknowledged()).containsExactlyInAnyOrderElementsOf(acknowledged);
     assertThat(jdbc.queryForObject("select membership_status_snapshot from staffing_plan_version_assignments where version_id=? and organization_membership_id=?",
-        String.class, result.versionId(), invited.getId())).isEqualTo("INVITED");
+        String.class, result.versionId(), invited.getId())).isEqualTo("ACTIVE");
   }
 
   @Test void atomicSnapshotPersistsRawEffectiveCoveredMissingAndOverstaffedSeparately() {
@@ -294,30 +296,29 @@ class StaffingPlanPublicationIntegrationTest {
     var canonical = coverage.calculate(fixture.organizationId(), fixture.unitId(), fixture.planId());
     assertThat(canonical.required()).isEqualTo(1);
     assertThat(canonical.assigned()).isEqualTo(3);
-    assertThat(canonical.effectiveAssigned()).isEqualTo(2);
+    assertThat(canonical.effectiveAssigned()).isEqualTo(3);
     assertThat(canonical.covered()).isEqualTo(1);
     assertThat(canonical.missing()).isZero();
-    assertThat(canonical.overstaffed()).isEqualTo(1);
+    assertThat(canonical.overstaffed()).isEqualTo(2);
 
-    var result = publication.publishPlan(command(fixture, fixture.planRevision(), Set.of(
-        "INVITATION_PENDING:" + invitedAssignment,
-        "OVERSTAFFING:" + requirementId), null, "canonical-snapshot-key"));
+    var result = publication.publishPlan(command(fixture, fixture.planRevision(),
+        Set.of("OVERSTAFFING:" + requirementId), null, "canonical-snapshot-key"));
 
-    assertThat(result.legacyCoverage().assigned()).isEqualTo(2);
+    assertThat(result.legacyCoverage().assigned()).isEqualTo(3);
     assertThat(result.canonicalCoverage()).isEqualTo(
-        new StaffingPlanPublicationService.CanonicalCoverage(1, 3, 2, 1, 0, 1,
+        new StaffingPlanPublicationService.CanonicalCoverage(1, 3, 3, 1, 0, 2,
             canonical.percentage()));
     assertThat(jdbc.queryForMap("""
         select coverage_assigned, coverage_raw_assigned, coverage_effective_assigned,
           coverage_covered, coverage_missing, coverage_overstaffed
         from staffing_plan_versions where id=?
         """, result.versionId())).containsAllEntriesOf(Map.of(
-            "coverage_assigned", 2,
+            "coverage_assigned", 3,
             "coverage_raw_assigned", 3,
-            "coverage_effective_assigned", 2,
+            "coverage_effective_assigned", 3,
             "coverage_covered", 1,
             "coverage_missing", 0,
-            "coverage_overstaffed", 1));
+            "coverage_overstaffed", 2));
     assertThat(jdbc.queryForMap("""
         select sum(required)::int required,sum(raw_assigned)::int raw_assigned,
           sum(effective_assigned)::int effective_assigned,sum(covered)::int covered,
@@ -325,8 +326,8 @@ class StaffingPlanPublicationIntegrationTest {
           sum(open_positions)::int open_positions
         from staffing_plan_version_requirement_coverage where version_id=?
         """, result.versionId())).containsAllEntriesOf(Map.of(
-            "required", 1, "raw_assigned", 3, "effective_assigned", 2,
-            "covered", 1, "missing", 0, "overstaffed", 1, "open_positions", 0));
+            "required", 1, "raw_assigned", 3, "effective_assigned", 3,
+            "covered", 1, "missing", 0, "overstaffed", 2, "open_positions", 0));
     assertThat(jdbc.queryForMap("""
         select count(*)::int days,sum(required)::int required,
           sum(raw_assigned)::int raw_assigned,sum(effective_assigned)::int effective_assigned,
@@ -334,8 +335,8 @@ class StaffingPlanPublicationIntegrationTest {
           sum(overstaffed)::int overstaffed,sum(open_positions)::int open_positions
         from staffing_plan_version_day_coverage where version_id=?
         """, result.versionId())).containsAllEntriesOf(Map.of(
-            "days", 7, "required", 1, "raw_assigned", 3, "effective_assigned", 2,
-            "covered", 1, "missing", 0, "overstaffed", 1, "open_positions", 0));
+            "days", 7, "required", 1, "raw_assigned", 3, "effective_assigned", 3,
+            "covered", 1, "missing", 0, "overstaffed", 2, "open_positions", 0));
   }
 
   @Test void warningsRequireAcknowledgementAndFailuresRollbackOperation() {

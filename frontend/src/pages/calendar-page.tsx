@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { ChevronDown, ChevronRight, FileCheck2, FileText, Pencil, ShieldCheck, Upload } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronDown, FileCheck2, FileText, Pencil, ShieldCheck, Upload } from "lucide-react";
 import {
   getCalendarActivityRange,
   getPayrollReconciliation,
@@ -391,6 +392,19 @@ export function CalendarPage() {
     [paidAbsenceDays, records]
   );
   const monthlyFlowAvailable = monthlyCurrencies.size <= 1;
+  const headerActionsTarget = typeof document === "undefined"
+    ? null
+    : document.getElementById("personal-workspace-header-actions");
+  const headerActions = (
+    <>
+      <button type="button" onClick={() => navigate("/settings/import-data?returnTo=/calendar")} className="personal-workspace__header-action" aria-label={t("settings:dataImport.menuLabel")}>
+        <Upload aria-hidden="true" />
+      </button>
+      <button type="button" onClick={() => navigate(`/settings/export-pdf?from=${monthStartKey}&to=${monthEndKey}&returnTo=/calendar`)} className="personal-workspace__header-action" aria-label={t("settings:pdfExport.menuLabel")}>
+        <FileText aria-hidden="true" />
+      </button>
+    </>
+  );
 
   useEffect(() => {
     if (!monthlyFlowAvailable) setMonthlyView("rhythm");
@@ -684,7 +698,9 @@ export function CalendarPage() {
   }
 
   return (
-    <div className="dashboard-glass-preview mx-auto flex w-full max-w-[560px] flex-col gap-6 pb-28 pt-8">
+    <>
+      {headerActionsTarget ? createPortal(headerActions, headerActionsTarget) : null}
+      <div className="personal-calendar-page mx-auto flex w-full max-w-[560px] flex-col gap-6 pb-28 pt-8">
       <header className={`settings-sticky-header dashboard-sticky-header calendar-sticky-header pointer-events-none fixed inset-x-0 top-0 z-40 mx-auto w-full max-w-[560px] transition-opacity duration-200 ${
         compactTitleVisible ? "opacity-100" : "opacity-0"
       }`}>
@@ -700,7 +716,7 @@ export function CalendarPage() {
 
       <h1
         ref={largeTitleRef}
-        className={`order-0 text-3xl font-semibold leading-none tracking-[-0.07em] text-[#f5f5f5] transition duration-200 ${
+        className={`personal-calendar-page__heading order-0 text-3xl font-semibold leading-none tracking-[-0.07em] text-[#f5f5f5] transition duration-200 ${
           compactTitleVisible ? "-translate-y-1 opacity-0" : "translate-y-0 opacity-100 delay-75"
         }`}
       >
@@ -1184,40 +1200,9 @@ export function CalendarPage() {
         />
       </section>
 
-      <section className="order-5 border-t border-white/[0.06] pt-5" aria-label={t("settings:pdfExport.title")}>
-        <div className="overflow-hidden rounded-[26px] border border-white/[0.075] bg-white/[0.028] backdrop-blur-xl">
-        <button
-          type="button"
-          onClick={() => navigate("/settings/import-data?returnTo=/calendar")}
-          className="flex min-h-[4.5rem] w-full items-center gap-3.5 border-b border-white/[0.06] px-4 text-left transition hover:bg-white/[0.025] active:bg-white/[0.045]"
-        >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-white/[0.055] text-white/60">
-            <Upload className="h-[18px] w-[18px]" aria-hidden="true" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[0.95rem] font-semibold tracking-[-0.025em] text-[#f5f5f5]">{t("settings:dataImport.menuLabel")}</span>
-            <span className="mt-1 line-clamp-1 block text-xs text-white/34">{t("settings:dataImport.menuDescription")}</span>
-          </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-white/25" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate(`/settings/export-pdf?from=${monthStartKey}&to=${monthEndKey}&returnTo=/calendar`)}
-          className="flex min-h-[4.5rem] w-full items-center gap-3.5 px-4 text-left transition hover:bg-white/[0.025] active:bg-white/[0.045]"
-        >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#10b981]/[0.075] text-[#34d399]/75">
-            <FileText className="h-[18px] w-[18px]" aria-hidden="true" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[0.95rem] font-semibold tracking-[-0.025em] text-[#f5f5f5]">{t("settings:pdfExport.menuLabel")}</span>
-            <span className="mt-1 line-clamp-1 block text-xs text-white/34">{t("settings:pageInfo.pdfExport.description")}</span>
-          </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-white/25" aria-hidden="true" />
-        </button>
-        </div>
-      </section>
-
-    </div>
+      {!headerActionsTarget ? <section className="order-5 flex gap-2" aria-label={t("settings:pdfExport.title")}>{headerActions}</section> : null}
+      </div>
+    </>
   );
 }
 

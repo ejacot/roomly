@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { listOrganizations, listOrganizationUnits } from "../../api/endpoints";
 import { BusinessPlanningShell } from "./business-planning-shell";
+import "../../styles/business-planning.css";
 
 export function BusinessManagementShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation("business");

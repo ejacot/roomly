@@ -93,7 +93,27 @@ class StaffingPlanCoverageIntegrationTest {
   }
 
   @Test
-  void onlyValidActiveAssignmentsAreEffective() {
+  void openEndedRequirementCountsAssignedPeopleWithoutInventingAnEndTime() {
+    Fixture fixture = fixture("open-ended-coverage");
+    UUID requirement = requirement(fixture, fixture.dayId(), WEEK, "CH", 2, "08:00", null);
+    assignment(fixture, requirement, activeEmployee(fixture, "first"), "ASSIGNED", null, null);
+    assignment(fixture, requirement, activeEmployee(fixture, "second"), "ASSIGNED", null, null);
+
+    var result = calculate(fixture);
+    var requirementCoverage = result.requirement(requirement);
+
+    assertThat(requirementCoverage.startTime()).isEqualTo(LocalTime.of(8, 0));
+    assertThat(requirementCoverage.endTime()).isNull();
+    assertThat(requirementCoverage.assigned()).isEqualTo(2);
+    assertThat(requirementCoverage.effectiveAssigned()).isEqualTo(2);
+    assertThat(requirementCoverage.covered()).isEqualTo(2);
+    assertThat(requirementCoverage.missing()).isZero();
+    assertThat(result.issues()).extracting(StaffingPlanCoverageService.PlanningIssue::code)
+        .doesNotContain(IssueCode.INVALID_INTERVAL, IssueCode.UNDERCOVERAGE);
+  }
+
+  @Test
+  void operationallyActiveAssignmentsAreEffectiveEvenBeforeAccountClaim() {
     Fixture fixture = fixture("membership-state");
     UUID requirement = requirement(fixture, fixture.dayId(), WEEK, "ROOM", 3, "09:00", "16:30");
     assignment(fixture, requirement, activeEmployee(fixture, "active"), "ASSIGNED", null, null);
@@ -107,18 +127,16 @@ class StaffingPlanCoverageIntegrationTest {
     var requirementCoverage = result.requirement(requirement);
 
     assertThat(requirementCoverage.assigned()).isEqualTo(3);
-    assertThat(requirementCoverage.effectiveAssigned()).isEqualTo(1);
-    assertThat(requirementCoverage.missing()).isEqualTo(2);
+    assertThat(requirementCoverage.effectiveAssigned()).isEqualTo(2);
+    assertThat(requirementCoverage.missing()).isEqualTo(1);
     assertThat(requirementCoverage.assignmentIds()).contains(invitedAssignment, suspendedAssignment);
-    assertThat(requirementCoverage.effectiveAssignmentIds()).hasSize(1);
+    assertThat(requirementCoverage.effectiveAssignmentIds()).hasSize(2);
     assertThat(result.issues()).extracting(StaffingPlanCoverageService.PlanningIssue::code)
-        .contains(IssueCode.INVITATION_PENDING, IssueCode.SUSPENDED_MEMBER,
-            IssueCode.UNDERCOVERAGE);
-    assertThat(result.issues().stream().filter(issue -> issue.code() == IssueCode.INVITATION_PENDING)
-        .findFirst().orElseThrow().acknowledgementRequired()).isTrue();
+        .contains(IssueCode.SUSPENDED_MEMBER, IssueCode.UNDERCOVERAGE)
+        .doesNotContain(IssueCode.INVITATION_PENDING);
     assertThat(result.issues().stream().filter(issue -> issue.code() == IssueCode.SUSPENDED_MEMBER)
-        .findFirst().orElseThrow().publishBlocking()).isTrue();
-    assertThat(result.publishable()).isFalse();
+        .findFirst().orElseThrow().publishBlocking()).isFalse();
+    assertThat(result.publishable()).isTrue();
   }
 
   @Test
@@ -159,7 +177,7 @@ class StaffingPlanCoverageIntegrationTest {
   }
 
   @Test
-  void sickBlocksRestDayDoesNotAndRejectedRequestAddsNoIssue() {
+  void sickAndRestDayBlockAssignmentsAndRejectedRequestAddsNoIssue() {
     Fixture fixture = fixture("absence-matrix");
     UUID sickRequirement = requirement(fixture, fixture.dayId(), WEEK, "PF", 1, "05:00", "13:30");
     UUID restRequirement = requirement(fixture, fixture.dayId(), WEEK, "PS", 1, "13:30", "22:00");
@@ -178,9 +196,10 @@ class StaffingPlanCoverageIntegrationTest {
     var result = calculate(fixture);
 
     assertThat(result.requirement(sickRequirement).effectiveAssigned()).isZero();
-    assertThat(result.requirement(restRequirement).effectiveAssigned()).isEqualTo(1);
+    assertThat(result.requirement(restRequirement).effectiveAssigned()).isZero();
     assertThat(result.issues()).extracting(StaffingPlanCoverageService.PlanningIssue::code)
-        .contains(IssueCode.APPROVED_SICK_CONFLICT, IssueCode.UNDERCOVERAGE)
+        .contains(IssueCode.APPROVED_SICK_CONFLICT, IssueCode.APPROVED_REST_DAY_CONFLICT,
+            IssueCode.UNDERCOVERAGE)
         .doesNotContain(IssueCode.PENDING_REQUEST);
   }
 
@@ -210,7 +229,8 @@ class StaffingPlanCoverageIntegrationTest {
     var result = calculate(fixture);
     assertThat(result.issues()).anySatisfy(issue -> {
       assertThat(issue.code()).isEqualTo(IssueCode.INCOMPATIBLE_OVERLAP);
-      assertThat(issue.publishBlocking()).isTrue();
+      assertThat(issue.publishBlocking()).isFalse();
+      assertThat(issue.acknowledgementRequired()).isTrue();
       assertThat(issue.parameters()).containsEntry("externalConflict", "true")
           .doesNotContainKeys("assignmentPair", "unitId", "requirementId");
       assertThat(issue.issueKey()).doesNotContain(externalAssignment.toString());
@@ -279,7 +299,7 @@ class StaffingPlanCoverageIntegrationTest {
   }
 
   @Test
-  void invalidSourceInactiveWorkTypeAndDuplicateAssignmentsAreBlocking() {
+  void invalidSourceAndInactiveWorkTypeBlockWhileDuplicateAssignmentsRequireAcknowledgement() {
     Fixture fixture = fixture("source-blockers");
     OrganizationMembership employee = activeEmployee(fixture, "duplicate-worker");
     UUID invalid = requirement(fixture, fixture.dayId(), WEEK, "HD", 1, "09:00", "17:30");
@@ -300,6 +320,9 @@ class StaffingPlanCoverageIntegrationTest {
     assertThat(result.issues().stream().filter(
         issue -> issue.code() == IssueCode.DUPLICATE_ASSIGNMENT).findFirst().orElseThrow()
         .parameters().get("assignmentPair")).contains(":");
+    assertThat(result.issues().stream().filter(
+        issue -> issue.code() == IssueCode.DUPLICATE_ASSIGNMENT).findFirst().orElseThrow()
+        .publishBlocking()).isFalse();
     assertThat(result.publishable()).isFalse();
   }
 

@@ -474,6 +474,21 @@ describe("dashboard components", () => {
     });
   });
 
+  it("aligns the daily-average guide with a full-height bar when their values match", () => {
+    const equalDays = weeklyDays.map((day) =>
+      day.key === "2026-07-14" || day.key === "2026-07-15"
+        ? { ...day, minutes: 480, amount: 160, status: "met" as const }
+        : day,
+    );
+
+    render(<WeeklyHoursCard days={equalDays} />);
+
+    expect(screen.getByTestId("weekly-average-guide")).toHaveAttribute(
+      "data-average-percentage",
+      "100",
+    );
+  });
+
   it("does not invent an average when a day contains different extra-pay rates", () => {
     const days = weeklyDays.map((day) =>
       day.key === "2026-07-15"

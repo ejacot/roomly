@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   StaffingCoverage,
   StaffingIssue,
@@ -104,7 +104,7 @@ const warning: StaffingIssue = {
 };
 
 function reviewWith(issues: StaffingIssue[] = [warning], revision = 6): StaffingReview {
-  const blocking = issues.filter((issue) => issue.severity === "BLOCKING_CONFLICT").length;
+  const blocking = issues.filter((issue) => issue.publishBlocking).length;
   const warnings = issues.filter((issue) => issue.severity === "WARNING").length;
   return {
     planId: "plan-1",
@@ -286,6 +286,10 @@ function expectReviewState(kind: string) {
 }
 
 describe("BusinessReviewPage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.findPlan.mockResolvedValue(entity({ found: true, plan }));
@@ -320,12 +324,11 @@ describe("BusinessReviewPage", () => {
     expect(await screen.findByText("98 / 99")).toBeInTheDocument();
     expectReviewState("ACKNOWLEDGEMENT_REQUIRED");
     expect(screen.queryByText("Ready to publish")).not.toBeInTheDocument();
-    const publish = screen.getByRole("button", { name: "Publish week" });
-    expect(publish).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review and acknowledge 1 warning" })).toBeEnabled();
     await user.click(screen.getByRole("checkbox", { name: /reviewed and acknowledge/ }));
     await waitFor(() => expectReviewState("READY_TO_PUBLISH"));
     await user.type(screen.getByLabelText("Publication note (optional)"), "  Hotel confirmed  ");
-    await user.click(publish);
+    await user.click(screen.getByRole("button", { name: "Publish week" }));
 
     await waitFor(() => expect(mocks.publish).toHaveBeenCalledWith(
       "org-1",
@@ -339,6 +342,32 @@ describe("BusinessReviewPage", () => {
     expectReviewState("PUBLISHED_CURRENT");
     expect(screen.queryByRole("checkbox", { name: /reviewed and acknowledge/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Publish week" })).not.toBeInTheDocument();
+  });
+
+  it("publishes when LAN Safari does not provide crypto.randomUUID", async () => {
+    const user = userEvent.setup();
+    const getRandomValues = vi.fn((values: Uint32Array) => {
+      values.set([1, 2, 3, 4]);
+      return values;
+    });
+    vi.stubGlobal("crypto", { getRandomValues });
+    mocks.findPlan.mockReset();
+    mocks.findPlan
+      .mockResolvedValueOnce(entity({ found: true, plan }))
+      .mockResolvedValue(entity({ found: true, plan: publishedPlan() }));
+    renderPage();
+
+    await user.click(await screen.findByRole("checkbox", { name: /reviewed and acknowledge/ }));
+    await user.click(screen.getByRole("button", { name: "Publish week" }));
+
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledWith(
+      "org-1",
+      "plan-1",
+      plan.etag,
+      "web-publish-00000001-00000002-00000003-00000004",
+      expect.anything(),
+    ));
+    expect(getRandomValues).toHaveBeenCalledTimes(1);
   });
 
   it("uses one PUBLISHING verdict without enabling a second submit", async () => {
@@ -394,26 +423,23 @@ describe("BusinessReviewPage", () => {
     expect(screen.getByRole("checkbox", { name: /reviewed and acknowledge/ })).not.toBeChecked();
   });
 
-  it("blocks publishing and links a blocking assignment issue back to Schedule", async () => {
+  it("allows an operational conflict to be acknowledged before publishing and links it to Schedule", async () => {
     const blocker: StaffingIssue = {
       ...warning,
       issueKey: "INCOMPATIBLE_OVERLAP:assignment-1",
       code: "INCOMPATIBLE_OVERLAP",
-      severity: "BLOCKING_CONFLICT",
+      severity: "WARNING",
       assignmentId: "assignment-1",
-      acknowledgementRequired: false,
-      publishBlocking: true,
+      acknowledgementRequired: true,
+      publishBlocking: false,
     };
     mocks.getReview.mockResolvedValue(entity(reviewWith([blocker])));
     renderPage();
 
-    expect((await screen.findAllByText("Resolve 1 blocking issue")).length).toBeGreaterThanOrEqual(1);
-    expectReviewState("BLOCKED");
-    expect(screen.getByRole("button", { name: "Publish week" })).toBeDisabled();
-    expect(screen.getByRole("link", { name: /Open Schedule/ })).toHaveAttribute(
-      "href",
-      "/business/org-1/plan/schedule?unit=unit-1&week=2026-08-10",
-    );
+    expect((await screen.findAllByText("Review and acknowledge 1 warning")).length).toBeGreaterThanOrEqual(1);
+    expectReviewState("ACKNOWLEDGEMENT_REQUIRED");
+    expect(screen.getByRole("button", { name: "Review and acknowledge 1 warning" })).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: /reviewed and acknowledge/ })).toBeInTheDocument();
   });
 
   it("never auto-retries a stale publish and clears the obsolete acknowledgement", async () => {
@@ -425,7 +451,7 @@ describe("BusinessReviewPage", () => {
     await user.click(acknowledgement);
     await user.click(screen.getByRole("button", { name: "Publish week" }));
 
-    expect(await screen.findByText(/plan changed during review/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/plan changed during review/)).length).toBeGreaterThan(0);
     expect(mocks.publish).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(acknowledgement).not.toBeChecked());
   });

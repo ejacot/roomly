@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { StaffingSchedule } from "../types/business-planning";
+import type { StaffingAssignmentCandidates, StaffingSchedule } from "../types/business-planning";
 import { BusinessSchedulePage } from "./business-schedule-page";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   updateAssignment: vi.fn(),
   cancelAssignment: vi.fn(),
   batchAssignments: vi.fn(),
+  setDayEntry: vi.fn(),
   apiError: vi.fn((cause: { status?: number; message?: string }) => ({
     status: cause?.status ?? 500,
     message: cause?.message ?? "Request failed",
@@ -33,6 +34,8 @@ vi.mock("../api/api-errors", () => ({ getApiError: mocks.apiError }));
 vi.mock("../api/endpoints", () => ({
   listOrganizations: vi.fn(async () => [{ id: "org-1", name: "PUIU GmbH", type: "BUSINESS", timezone: "Europe/Berlin", role: "OWNER" }]),
   listOrganizationUnits: vi.fn(async () => [{ id: "unit-1", parentId: null, name: "Hotel München", type: "LOCATION", checkInMode: "OPTIONAL", active: true, displayOrder: 0 }]),
+  listBusinessWorkTypes: vi.fn(async () => [{ id: "spa-s", color: "#7c3aed" }]),
+  setStaffingDayEntry: mocks.setDayEntry,
 }));
 
 const totals = (required: number, assigned: number) => ({
@@ -74,9 +77,9 @@ function schedule(assigned = false): StaffingSchedule {
       requirements: index === 6 ? [requirement] : [], issueKeys: [],
     })),
     members: [
-      { membershipId: "member-1", displayName: "Mara Ionescu", membershipStatus: "ACTIVE", assignmentIds: ["assignment-1"], dayStatuses: [] },
-      { membershipId: "member-2", displayName: "Ana Dumitru", membershipStatus: "ACTIVE", assignmentIds: assigned ? ["assignment-2"] : [], dayStatuses: [] },
-      { membershipId: "member-3", displayName: "Ioana Stan", membershipStatus: "ACTIVE", assignmentIds: [], dayStatuses: [{ membershipId: "member-3", date: "2026-08-16", status: "VACATION", source: "MANAGER", pending: false }] },
+      { membershipId: "member-1", displayName: "Mara Ionescu", membershipStatus: "ACTIVE", assignmentIds: ["assignment-1"], dayStatuses: [], displayOrder: 0 },
+      { membershipId: "member-2", displayName: "Ana Dumitru", membershipStatus: "ACTIVE", assignmentIds: assigned ? ["assignment-2"] : [], dayStatuses: [], displayOrder: 1 },
+      { membershipId: "member-3", displayName: "Ioana Stan", membershipStatus: "ACTIVE", assignmentIds: [], dayStatuses: [{ membershipId: "member-3", date: "2026-08-16", status: "VACATION", source: "MANAGER", pending: false }], displayOrder: 2 },
     ],
     issues: [],
   };
@@ -90,7 +93,7 @@ function assignment(id: string, membershipId: string, name: string) {
   };
 }
 
-function candidates(warning = false) {
+function candidates(warning = false): StaffingAssignmentCandidates {
   return {
     planId: "plan-1", requirementId: "req-spa", draftRevision: 4, etag: plan.etag,
     requirement: {
@@ -136,15 +139,17 @@ describe("BusinessSchedulePage", () => {
       assigned = true;
       return entity({ planId: "plan-1", previousDraftRevision: 4, currentDraftRevision: 5, changed: true, affectedResourceIds: ["assignment-2"] });
     });
+    mocks.setDayEntry.mockResolvedValue({});
   });
 
   it("connects an open position to C5e and saves it through C5b before showing coverage", async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole("button", { name: /Assign SPA S on Sunday/ }));
-    await user.click(await screen.findByRole("button", { name: /Ana Dumitru/ }));
-    await user.click(screen.getByRole("button", { name: "Assign Ana Dumitru" }));
+    await user.click(await screen.findByRole("button", { name: /Assign Spa Spät on Sunday/ }));
+    const ana = await screen.findByRole("button", { name: /^Ana Dumitru.*Recommended/ });
+    await user.click(ana);
+    await user.click(ana);
 
     await waitFor(() => expect(mocks.createAssignment).toHaveBeenCalledWith(
       "org-1", "plan-1", '"plan-plan-1-rev-4"', expect.stringMatching(/^web-/),
@@ -154,24 +159,153 @@ describe("BusinessSchedulePage", () => {
     await waitFor(() => expect(screen.getAllByText("0").length).toBeGreaterThan(0));
   });
 
+  it("assigns one work type to the same employee on selected days in one batch", async () => {
+    const user = userEvent.setup();
+    const weekly = schedule();
+    weekly.days[0].requirements = [{
+      ...weekly.days[6].requirements[0],
+      requirementId: "req-mon",
+      planDayId: "day-0",
+      date: "2026-08-10",
+      assignments: [],
+      coverage: totals(2, 0),
+    }];
+    mocks.getSchedule.mockResolvedValue(entity(weekly));
+    mocks.batchAssignments.mockResolvedValue(entity({
+      planId: "plan-1", previousDraftRevision: 4, currentDraftRevision: 5, changed: true, affectedResourceIds: ["assignment-2"],
+    }));
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Assign work across the week for Ana Dumitru/ }));
+    await user.click(screen.getByRole("checkbox", { name: /Monday/ }));
+    await user.click(screen.getByRole("checkbox", { name: /Sunday/ }));
+    await user.click(screen.getByRole("button", { name: "Assign to 2 day(s)" }));
+
+    await waitFor(() => expect(mocks.batchAssignments).toHaveBeenCalledWith(
+      "org-1", "plan-1", '"plan-plan-1-rev-4"', expect.stringMatching(/^web-/),
+      expect.arrayContaining([
+        expect.objectContaining({ operation: "CREATE", create: expect.objectContaining({ requirementId: "req-mon", membershipId: "member-2" }) }),
+        expect.objectContaining({ operation: "CREATE", create: expect.objectContaining({ requirementId: "req-spa", membershipId: "member-2" }) }),
+      ]),
+    ));
+  });
+
+  it("uses the configured work-type color for an assigned work card", async () => {
+    renderPage();
+
+    const card = await screen.findByRole("button", { name: /Edit Mara Ionescu assignment for Spa Spät/ });
+    await waitFor(() => expect(card).toHaveStyle("--schedule-work-type-color: #7c3aed"));
+  });
+
   it("requires explicit confirmation for an eligible candidate with warning", async () => {
     const user = userEvent.setup();
     mocks.getCandidates.mockResolvedValue(entity(candidates(true)));
     renderPage();
-    await user.click(await screen.findByRole("button", { name: /Assign SPA S on Sunday/ }));
-    await user.click(await screen.findByRole("button", { name: /Ana Dumitru/ }));
+    await user.click(await screen.findByRole("button", { name: /Assign Spa Spät on Sunday/ }));
+    await user.click(await screen.findByRole("button", { name: /^Ana Dumitru.*Recommended/ }));
     const assign = screen.getByRole("button", { name: "Assign Ana Dumitru" });
     expect(assign).toBeDisabled();
     await user.click(screen.getByRole("checkbox"));
     expect(assign).toBeEnabled();
   });
 
+  it("filters the available people by name", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Assign Spa Spät on Sunday/ }));
+    const search = await screen.findByRole("searchbox", { name: "Search people" });
+    await user.type(search, "missing");
+    expect(screen.getByText("No matching person.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Ana Dumitru.*Recommended/ })).not.toBeInTheDocument();
+  });
+
+  it("shows weekly hours with a left swipe and hides them with a right swipe", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Weekly employee plan" });
+    const grid = document.querySelector(".schedule-grid");
+    expect(grid).not.toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Week" })).not.toBeInTheDocument();
+
+    fireEvent(grid!, pointerGesture("pointerdown", 1, 220));
+    fireEvent(grid!, pointerGesture("pointerup", 1, 120));
+    expect(await screen.findByRole("columnheader", { name: "Week" })).toBeInTheDocument();
+
+    fireEvent(grid!, pointerGesture("pointerdown", 2, 120));
+    fireEvent(grid!, pointerGesture("pointerup", 2, 220));
+    await waitFor(() => expect(screen.queryByRole("columnheader", { name: "Week" })).not.toBeInTheDocument());
+  });
+
+  it("offers candidates and saves a day-based position without inventing an interval", async () => {
+    const user = userEvent.setup();
+    const dayBased = schedule();
+    dayBased.days[6].requirements[0].startTime = null;
+    dayBased.days[6].requirements[0].endTime = null;
+    mocks.getSchedule.mockResolvedValue(entity(dayBased));
+    const dayCandidates = candidates();
+    dayCandidates.requirement.startTime = null;
+    dayCandidates.requirement.endTime = null;
+    mocks.getCandidates.mockResolvedValue(entity(dayCandidates));
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Assign Spa Spät on Sunday/ }));
+    const ana = await screen.findByRole("button", { name: /^Ana Dumitru.*Recommended/ });
+    await user.click(ana);
+    await user.click(ana);
+
+    await waitFor(() => expect(mocks.createAssignment).toHaveBeenCalledWith(
+      "org-1", "plan-1", '"plan-plan-1-rev-4"', expect.stringMatching(/^web-/),
+      { requirementId: "req-spa", membershipId: "member-2", startTime: null, endTime: null },
+    ));
+  });
+
+  it("assigns an employee from their day cell after selecting the work twice", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Choose work for Ana Dumitru on Sunday/ }));
+    const spa = screen.getByRole("button", { name: /Choose Spa Spät for Ana Dumitru on Sunday/ });
+    await user.click(spa);
+    expect(spa).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(mocks.getCandidates).toHaveBeenCalled());
+    await user.click(spa);
+
+    await waitFor(() => expect(mocks.createAssignment).toHaveBeenCalledWith(
+      "org-1", "plan-1", '"plan-plan-1-rev-4"', expect.stringMatching(/^web-/),
+      { requirementId: "req-spa", membershipId: "member-2", startTime: "12:00:00", endTime: "20:30:00" },
+    ));
+  });
+
+  it("keeps an employee day menu available after all positions are covered", async () => {
+    assigned = true;
+    renderPage();
+
+    await userEvent.setup().click(await screen.findByRole("button", {
+      name: /Choose work for Mara Ionescu on Sunday/,
+    }));
+    expect(screen.getByRole("button", { name: /Choose Spa Spät for Mara Ionescu on Sunday/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Day off/ })).toBeEnabled();
+  });
+
+  it("offers F, K and U directly from an employee day cell", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Choose work for Ana Dumitru on Sunday/ }));
+    await user.click(screen.getByRole("button", { name: /Day off/ }));
+
+    await waitFor(() => expect(mocks.setDayEntry).toHaveBeenCalledWith(
+      "org-1", "member-2", "2026-08-16", "REST_DAY",
+    ));
+  });
+
   it("reloads after stale 412 and never replays the assignment automatically", async () => {
     const user = userEvent.setup();
     mocks.createAssignment.mockRejectedValueOnce({ status: 412, message: "stale" });
     renderPage();
-    await user.click(await screen.findByRole("button", { name: /Assign SPA S on Sunday/ }));
-    await user.click(await screen.findByRole("button", { name: /Ana Dumitru/ }));
+    await user.click(await screen.findByRole("button", { name: /Assign Spa Spät on Sunday/ }));
+    await user.click(await screen.findByRole("button", { name: /^Ana Dumitru.*Recommended/ }));
     await user.click(screen.getByRole("button", { name: "Assign Ana Dumitru" }));
     expect(await screen.findByText(/changed elsewhere/)).toBeInTheDocument();
     expect(mocks.createAssignment).toHaveBeenCalledTimes(1);
@@ -197,3 +331,12 @@ describe("BusinessSchedulePage", () => {
     expect(screen.queryByRole("dialog", { name: "Mara Ionescu" })).not.toBeInTheDocument();
   });
 });
+
+function pointerGesture(type: "pointerdown" | "pointerup", pointerId: number, clientX: number) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    pointerId: { value: pointerId },
+    clientX: { value: clientX },
+  });
+  return event;
+}

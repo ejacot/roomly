@@ -9,7 +9,7 @@ import com.alveryn.api.worktype.entity.*;
 public final class StaffingDtos {
   private StaffingDtos() {}
   public record WorkTypeRequest(UUID unitId, UUID parentId, @NotBlank @Size(max=20) String code,
-      @NotBlank @Size(max=120) String name, @Size(max=20) String color,
+      @Size(max=120) String name, @Size(max=20) String color,
       LocalTime defaultStartTime, LocalTime defaultEndTime, @PositiveOrZero Integer defaultBreakMinutes,
       CalculationMethod calculationMethod, CompensationMethod compensationMethod,
       @Size(max=100) String unitLabel,@Size(max=20) String unitSymbol,@Positive BigDecimal unitsPerHour,
@@ -27,6 +27,7 @@ public final class StaffingDtos {
       @Positive int requiredWorkers, @Positive BigDecimal requiredQuantity, @Size(max=500) String notes) {}
   public record AssignmentRequest(@NotNull UUID membershipId, LocalTime startTime, LocalTime endTime) {}
   public record AssignmentTimeRequest(LocalTime startTime, LocalTime endTime) {}
+  public record MemberOrderRequest(@NotEmpty @Size(max=500) List<@NotNull UUID> membershipIds) {}
   public record RequirementUpdateRequest(LocalTime startTime, LocalTime endTime, @Positive int requiredWorkers,
       @Positive BigDecimal requiredQuantity, @Size(max=500) String notes,
       UUID unitId, UUID workTypeId, LocalDate date) {}

@@ -1,4 +1,5 @@
-import { Clock3, Info } from "lucide-react";
+import { Clock3, Copy, Settings2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BusinessWorkType } from "../../types/business";
 import type {
@@ -11,6 +12,7 @@ type Props = {
   days: StaffingDemandDay[];
   workTypes: BusinessWorkType[];
   canManage: boolean;
+  copying: boolean;
   busyCells: Set<string>;
   onCommit: (workType: BusinessWorkType, day: StaffingDemandDay, value: number) => void;
   onPaste: (
@@ -19,27 +21,51 @@ type Props = {
     text: string,
   ) => void;
   onEdit: (requirement: StaffingDemandRequirement) => void;
+  onApplyWorkType: (workType: BusinessWorkType, trigger: HTMLElement) => void;
+  onEditWorkType: (workType: BusinessWorkType) => void;
+  onCopyPreviousWeek: () => void;
 };
 
 export function DemandMatrix({
   days,
   workTypes,
   canManage,
+  copying,
   busyCells,
   onCommit,
   onPaste,
   onEdit,
+  onApplyWorkType,
+  onEditWorkType,
+  onCopyPreviousWeek,
 }: Props) {
   const { t, i18n } = useTranslation("business");
+  const [revealedWorkTypeId, setRevealedWorkTypeId] = useState<string | null>(null);
 
   return (
-    <section className="demand-matrix" aria-labelledby="demand-matrix-title">
+    <section
+      className="demand-matrix"
+      aria-labelledby="demand-matrix-title"
+      onPointerDownCapture={(event) => {
+        if (!(event.target as Element).closest(".demand-matrix__work-type-cell")) {
+          setRevealedWorkTypeId(null);
+        }
+      }}
+    >
       <header className="demand-matrix__heading">
         <div>
           <h2 id="demand-matrix-title">{t("planning.demand.matrixTitle")}</h2>
           <p>{t("planning.demand.keyboardHint")}</p>
         </div>
-        <span><Info aria-hidden="true" /> {t("planning.demand.sourceHint")}</span>
+        <button
+          type="button"
+          className="demand-matrix__copy"
+          disabled={!canManage || copying}
+          onClick={onCopyPreviousWeek}
+        >
+          <Copy aria-hidden="true" />
+          {copying ? t("planning.demand.copying") : t("planning.demand.copyPrevious")}
+        </button>
       </header>
 
       <div
@@ -81,11 +107,15 @@ export function DemandMatrix({
             {workTypes.map((workType, workTypeIndex) => (
               <tr key={workType.id}>
                 <th scope="row">
-                  <i style={{ "--work-type-color": workType.color } as React.CSSProperties} />
-                  <span>
-                    <strong>{workType.code}</strong>
-                    <small>{workType.name}</small>
-                  </span>
+                  <WorkTypeCell
+                    workType={workType}
+                    canManage={canManage}
+                    settingsVisible={revealedWorkTypeId === workType.id}
+                    onReveal={() => setRevealedWorkTypeId(workType.id)}
+                    onApply={(trigger) => onApplyWorkType(workType, trigger)}
+                    onSettings={() => onEditWorkType(workType)}
+                    t={t}
+                  />
                 </th>
                 {days.map((day, dayIndex) => {
                   const matches = day.requirements.filter(
@@ -145,9 +175,96 @@ export function DemandMatrix({
   );
 }
 
+function WorkTypeCell({
+  workType,
+  canManage,
+  settingsVisible,
+  onReveal,
+  onApply,
+  onSettings,
+  t,
+}: {
+  workType: BusinessWorkType;
+  canManage: boolean;
+  settingsVisible: boolean;
+  onReveal: () => void;
+  onApply: (trigger: HTMLElement) => void;
+  onSettings: () => void;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const gesture = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+  return (
+    <div
+      className={`demand-matrix__work-type-cell${settingsVisible ? " is-revealed" : ""}`}
+      onPointerDown={(event) => {
+        gesture.current = event.clientX;
+        if (typeof event.currentTarget.setPointerCapture === "function") event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerUp={(event) => {
+        if (gesture.current !== null && event.clientX - gesture.current < -18) {
+          suppressClick.current = true;
+          onReveal();
+        }
+        if (typeof event.currentTarget.hasPointerCapture === "function" && event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        gesture.current = null;
+      }}
+      onPointerCancel={() => { gesture.current = null; }}
+    >
+      <button
+        type="button"
+        className="demand-matrix__work-type"
+        style={{ "--work-type-color": workType.color } as React.CSSProperties}
+        disabled={!canManage}
+        onClick={(event) => {
+          if (suppressClick.current) { suppressClick.current = false; return; }
+          onApply(event.currentTarget);
+        }}
+        aria-label={t("planning.demand.applyWorkType", {
+          workType: workType.name,
+          defaultValue: "Apply {{workType}} to days",
+        })}
+      >
+        <i />
+        <span><strong>{workType.name}</strong><small>{workTypePlanningSummary(workType)}</small></span>
+      </button>
+      <button
+        type="button"
+        className="demand-matrix__work-type-settings"
+        aria-label={t("planning.demand.editWorkType", { workType: workType.name, defaultValue: "Edit {{workType}} work type" })}
+        onClick={onSettings}
+      ><Settings2 aria-hidden="true" /></button>
+    </div>
+  );
+}
+
 export function timeRange(requirement: StaffingDemandRequirement) {
   if (!requirement.startTime && !requirement.endTime) return "—";
   return `${requirement.startTime?.slice(0, 5) ?? "—"}–${requirement.endTime?.slice(0, 5) ?? "—"}`;
+}
+
+export function workTypePlanningSummary(workType: BusinessWorkType) {
+  const start = workType.defaultStartTime?.slice(0, 5) ?? null;
+  const end = workType.defaultEndTime?.slice(0, 5) ?? null;
+  if (start && end) {
+    const startMinutes = toMinutes(start);
+    let duration = toMinutes(end) - startMinutes;
+    if (duration <= 0) duration += 24 * 60;
+    const net = Math.max(0, duration - workType.defaultBreakMinutes);
+    return `${start}–${end} · ${formatMinutes(net)}`;
+  }
+  return start ? `${start} start` : "No set time";
+}
+
+function toMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function formatMinutes(value: number) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 function formatWeekday(value: string, language: string) {

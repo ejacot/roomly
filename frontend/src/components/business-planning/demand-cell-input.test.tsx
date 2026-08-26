@@ -20,4 +20,17 @@ describe("DemandCellInput", () => {
     expect(onCommit).toHaveBeenCalledWith(5);
     expect(screen.getByRole("spinbutton", { name: "Tuesday rooms" })).toHaveFocus();
   });
+
+  it("clears on focus and restores the current value when blurred without an edit", () => {
+    const onCommit = vi.fn();
+    render(<DemandCellInput value={4} label="Monday rooms" cellKey="0:0" onCommit={onCommit} />);
+
+    const input = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Monday rooms" });
+    fireEvent.focus(input);
+    expect(input).toHaveValue(null);
+
+    fireEvent.blur(input);
+    expect(input).toHaveValue(4);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
 });

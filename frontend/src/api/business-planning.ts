@@ -97,6 +97,11 @@ export async function getStaffingSchedule(
   );
 }
 
+/** Persists the custom people order for the whole Business organization. */
+export async function reorderStaffingMembers(organizationId: string, membershipIds: string[]) {
+  await http.put(`/api/organizations/${organizationId}/staffing/members/order`, { membershipIds });
+}
+
 export async function getStaffingPlanHeader(
   organizationId: string,
   planId: string,
