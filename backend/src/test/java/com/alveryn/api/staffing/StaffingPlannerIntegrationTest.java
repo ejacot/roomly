@@ -82,9 +82,9 @@ class StaffingPlannerIntegrationTest {
         .andExpect(jsonPath("$.data[0].date").value("2026-08-11")).andExpect(jsonPath("$.data[1].date").value("2026-08-12"));
     mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId, first, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token()).contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"VACATION\"}"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.error.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+        .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
     mvc.perform(get("/api/organizations/{org}/staffing/day-entries", orgId).param("from", "2026-08-10").param("to", "2026-08-16").header(HttpHeaders.AUTHORIZATION, token()))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
     mvc.perform(post("/api/organizations/{org}/staffing/publish", orgId).header(HttpHeaders.AUTHORIZATION, token()).contentType(MediaType.APPLICATION_JSON).content("{\"from\":\"2026-08-10\",\"to\":\"2026-08-16\"}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.publishedRequirements").value(4));
     mvc.perform(get("/api/my/business-schedule").param("from", "2026-08-10").param("to", "2026-08-16").header(HttpHeaders.AUTHORIZATION, token()))
@@ -202,7 +202,7 @@ class StaffingPlannerIntegrationTest {
               requirement).header(HttpHeaders.AUTHORIZATION, token())
               .contentType(MediaType.APPLICATION_JSON).content("{\"membershipId\":\"" + member + "\"}"))
           .andExpect(status().isConflict())
-          .andExpect(jsonPath("$.error.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+          .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
     }
   }
 
@@ -305,13 +305,25 @@ class StaffingPlannerIntegrationTest {
     mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
             member, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token())
             .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"REST_DAY\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("DAY_STATUS_ASSIGNMENT_CONFLICT"));
+    assertPlanRevision(orgId, team, "2026-08-10", 7);
+
+    mvc.perform(delete("/api/organizations/{org}/staffing/requirements/{req}/assignments/{assignment}",
+            orgId, requirement, assignment).header(HttpHeaders.AUTHORIZATION, token()))
         .andExpect(status().isOk());
     assertPlanRevision(orgId, team, "2026-08-10", 8);
+
     mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
             member, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token())
             .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"REST_DAY\"}"))
         .andExpect(status().isOk());
-    assertPlanRevision(orgId, team, "2026-08-10", 8);
+    assertPlanRevision(orgId, team, "2026-08-10", 9);
+    mvc.perform(put("/api/organizations/{org}/staffing/members/{member}/days/{date}", orgId,
+            member, "2026-08-10").header(HttpHeaders.AUTHORIZATION, token())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"REST_DAY\"}"))
+        .andExpect(status().isOk());
+    assertPlanRevision(orgId, team, "2026-08-10", 9);
 
     mvc.perform(delete("/api/organizations/{org}/staffing/requirements/{req}/assignments/{assignment}",
             orgId, requirement, assignment).header(HttpHeaders.AUTHORIZATION, token()))
@@ -384,7 +396,7 @@ class StaffingPlannerIntegrationTest {
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.approvalStatus").value("SUBMITTED"));
     String unpublishedRequirement = create("/api/organizations/" + orgId + "/staffing/requirements",
         "{\"unitId\":\"" + team + "\",\"workTypeId\":\"" + type
-            + "\",\"date\":\"2026-08-11\",\"requiredWorkers\":1}");
+            + "\",\"date\":\"2026-08-12\",\"requiredWorkers\":1}");
     mvc.perform(post("/api/organizations/{org}/staffing/requirements/{req}/assignments", orgId,
             unpublishedRequirement).header(HttpHeaders.AUTHORIZATION, token())
             .contentType(MediaType.APPLICATION_JSON)

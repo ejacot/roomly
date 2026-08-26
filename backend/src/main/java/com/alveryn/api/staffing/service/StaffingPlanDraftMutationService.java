@@ -21,6 +21,7 @@ import com.alveryn.api.staffing.exception.StaffingPlanMutationApiException;
 import com.alveryn.api.staffing.repository.OrganizationWorkTypeRepository;
 import com.alveryn.api.staffing.repository.StaffingAssignmentRepository;
 import com.alveryn.api.staffing.repository.StaffingChangeEventRepository;
+import com.alveryn.api.staffing.repository.StaffingMemberDayEntryRepository;
 import com.alveryn.api.staffing.repository.StaffingPlanDayRepository;
 import com.alveryn.api.staffing.repository.StaffingPlanRepository;
 import com.alveryn.api.staffing.repository.StaffingRequirementRepository;
@@ -65,6 +66,7 @@ public class StaffingPlanDraftMutationService {
   private final StaffingPlanMutationCoordinator coordinator;
   private final StaffingPlanIfMatchParser ifMatchParser;
   private final StaffingChangeEventRepository changeEvents;
+  private final StaffingMemberDayEntryRepository dayEntries;
   private final JdbcTemplate jdbc;
   private final ObjectMapper objectMapper;
 
@@ -177,6 +179,7 @@ public class StaffingPlanDraftMutationService {
         plan -> {
           StaffingRequirement requirement = requirement(authorized, normalized.requirementId());
           OrganizationMembership member = member(authorized, normalized.membershipId());
+          rejectAssignmentOnDayEntry(authorized.organizationId(), member.getId(), requirement.getDate());
           validateRange(normalized.startTime(), normalized.endTime());
           if (assignments.existsByRequirementIdAndMembershipIdAndStatus(requirement.getId(),
               member.getId(), "ASSIGNED")) {
@@ -243,6 +246,7 @@ public class StaffingPlanDraftMutationService {
             AssignmentInput input = normalize(action.create());
             StaffingRequirement requirement = requirement(authorized, input.requirementId());
             OrganizationMembership member = member(authorized, input.membershipId());
+            rejectAssignmentOnDayEntry(authorized.organizationId(), member.getId(), requirement.getDate());
             validateRange(input.startTime(), input.endTime());
             if (assignments.existsByRequirementIdAndMembershipIdAndStatus(requirement.getId(),
                 member.getId(), "ASSIGNED")) {
@@ -405,6 +409,14 @@ public class StaffingPlanDraftMutationService {
       throw validation("Suspended member cannot receive assignments");
     }
     return value;
+  }
+
+  private void rejectAssignmentOnDayEntry(UUID organizationId, UUID membershipId, LocalDate date) {
+    dayEntries.findByOrganizationIdAndMembershipIdAndDate(organizationId, membershipId, date)
+        .ifPresent(entry -> {
+          throw error(HttpStatus.CONFLICT, "DAY_STATUS_ASSIGNMENT_CONFLICT",
+              "Remove the " + entry.getType() + " day status before assigning work");
+        });
   }
 
   private StaffingPlanDay day(StaffingPlan plan, LocalDate date) {

@@ -113,7 +113,7 @@ class StaffingPlanCoverageIntegrationTest {
   }
 
   @Test
-  void onlyValidActiveAssignmentsAreEffective() {
+  void operationallyActiveAssignmentsAreEffectiveEvenBeforeAccountClaim() {
     Fixture fixture = fixture("membership-state");
     UUID requirement = requirement(fixture, fixture.dayId(), WEEK, "ROOM", 3, "09:00", "16:30");
     assignment(fixture, requirement, activeEmployee(fixture, "active"), "ASSIGNED", null, null);
@@ -127,18 +127,16 @@ class StaffingPlanCoverageIntegrationTest {
     var requirementCoverage = result.requirement(requirement);
 
     assertThat(requirementCoverage.assigned()).isEqualTo(3);
-    assertThat(requirementCoverage.effectiveAssigned()).isEqualTo(1);
-    assertThat(requirementCoverage.missing()).isEqualTo(2);
+    assertThat(requirementCoverage.effectiveAssigned()).isEqualTo(2);
+    assertThat(requirementCoverage.missing()).isEqualTo(1);
     assertThat(requirementCoverage.assignmentIds()).contains(invitedAssignment, suspendedAssignment);
-    assertThat(requirementCoverage.effectiveAssignmentIds()).hasSize(1);
+    assertThat(requirementCoverage.effectiveAssignmentIds()).hasSize(2);
     assertThat(result.issues()).extracting(StaffingPlanCoverageService.PlanningIssue::code)
-        .contains(IssueCode.INVITATION_PENDING, IssueCode.SUSPENDED_MEMBER,
-            IssueCode.UNDERCOVERAGE);
-    assertThat(result.issues().stream().filter(issue -> issue.code() == IssueCode.INVITATION_PENDING)
-        .findFirst().orElseThrow().acknowledgementRequired()).isTrue();
+        .contains(IssueCode.SUSPENDED_MEMBER, IssueCode.UNDERCOVERAGE)
+        .doesNotContain(IssueCode.INVITATION_PENDING);
     assertThat(result.issues().stream().filter(issue -> issue.code() == IssueCode.SUSPENDED_MEMBER)
-        .findFirst().orElseThrow().publishBlocking()).isTrue();
-    assertThat(result.publishable()).isFalse();
+        .findFirst().orElseThrow().publishBlocking()).isFalse();
+    assertThat(result.publishable()).isTrue();
   }
 
   @Test
