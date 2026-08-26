@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { StaffingSchedule } from "../types/business-planning";
+import type { StaffingAssignmentCandidates, StaffingSchedule } from "../types/business-planning";
 import { BusinessSchedulePage } from "./business-schedule-page";
 
 const mocks = vi.hoisted(() => ({
@@ -77,9 +77,9 @@ function schedule(assigned = false): StaffingSchedule {
       requirements: index === 6 ? [requirement] : [], issueKeys: [],
     })),
     members: [
-      { membershipId: "member-1", displayName: "Mara Ionescu", membershipStatus: "ACTIVE", assignmentIds: ["assignment-1"], dayStatuses: [] },
-      { membershipId: "member-2", displayName: "Ana Dumitru", membershipStatus: "ACTIVE", assignmentIds: assigned ? ["assignment-2"] : [], dayStatuses: [] },
-      { membershipId: "member-3", displayName: "Ioana Stan", membershipStatus: "ACTIVE", assignmentIds: [], dayStatuses: [{ membershipId: "member-3", date: "2026-08-16", status: "VACATION", source: "MANAGER", pending: false }] },
+      { membershipId: "member-1", displayName: "Mara Ionescu", membershipStatus: "ACTIVE", assignmentIds: ["assignment-1"], dayStatuses: [], displayOrder: 0 },
+      { membershipId: "member-2", displayName: "Ana Dumitru", membershipStatus: "ACTIVE", assignmentIds: assigned ? ["assignment-2"] : [], dayStatuses: [], displayOrder: 1 },
+      { membershipId: "member-3", displayName: "Ioana Stan", membershipStatus: "ACTIVE", assignmentIds: [], dayStatuses: [{ membershipId: "member-3", date: "2026-08-16", status: "VACATION", source: "MANAGER", pending: false }], displayOrder: 2 },
     ],
     issues: [],
   };
@@ -93,7 +93,7 @@ function assignment(id: string, membershipId: string, name: string) {
   };
 }
 
-function candidates(warning = false) {
+function candidates(warning = false): StaffingAssignmentCandidates {
   return {
     planId: "plan-1", requirementId: "req-spa", draftRevision: 4, etag: plan.etag,
     requirement: {

@@ -488,13 +488,13 @@ function BusinessWorkTypeEditorContent() {
                 )
           }
           submitDisabled={
-            !code.trim() ||
+            Boolean(!code.trim() ||
             (effectiveMethod === "UNITS_PER_HOUR_BASED" &&
               !isCategory &&
               !Number(unitsPerHour)) ||
             (effectiveMethod === "UNIT_BASED" && !isCategory && !Number(rate)) ||
             (effectiveMethod === "TIME_BASED" && !isCategory &&
-              defaultEndTime && !defaultStartTime)
+              defaultEndTime !== "" && defaultStartTime === ""))
           }
           onDelete={workTypeId ? () => setConfirmDeactivate(true) : undefined}
           deleteLabel={
