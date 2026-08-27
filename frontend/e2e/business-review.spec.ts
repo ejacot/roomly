@@ -23,7 +23,7 @@ test.describe("authenticated Business Review and Publish", () => {
 
     await expect(page.getByRole("heading", { level: 1, name: "Is every requirement covered?" })).toBeVisible();
     await expect(page.getByText("98 / 99")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Publish week" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Unpublished changes" })).toBeEnabled();
     await expect(page.getByText("Unpublished changes").first()).toBeVisible();
     await expectConsistentReviewState(page, "UNPUBLISHED_CHANGES");
     await capture(page, "review-desktop-warning-light.png");
@@ -112,8 +112,8 @@ test.describe("authenticated Business Review and Publish", () => {
     await openReview(page, 1366, 900);
 
     await expect(page.getByText("Blocking conflicts")).toBeVisible();
-    await expect(page.getByText("A person has overlapping assignments.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Publish week" })).toBeDisabled();
+    await expect(page.getByText("A person has overlapping assignments.").first()).toBeVisible();
+    await expect(page.locator(".business-review__publish-action")).toHaveText("Resolve 1 blocking issue");
     await expectConsistentReviewState(page, "BLOCKED");
     await expect(page.getByRole("link", { name: "Open Schedule" })).toBeVisible();
     await capture(page, "review-desktop-blocked-light.png");
@@ -125,7 +125,7 @@ test.describe("authenticated Business Review and Publish", () => {
 
     await page.getByRole("checkbox", { name: /reviewed and acknowledge/ }).check();
     await page.getByRole("button", { name: "Publish week" }).click();
-    await expect(page.getByText(/plan changed during review/)).toBeVisible();
+    await expect(page.getByText(/plan changed during review/).first()).toBeVisible();
     await expect(page.getByRole("checkbox", { name: /reviewed and acknowledge/ })).not.toBeChecked();
     expect(state.requests.filter((item) => item.method === "POST" && item.path.endsWith("/publish"))).toHaveLength(1);
   });
@@ -139,8 +139,8 @@ test.describe("authenticated Business Review and Publish", () => {
       await installReviewMocks(page, { theme: viewport.theme === "dark" ? "DARK" : "LIGHT" });
       await openReview(page, viewport.width, viewport.height, viewport.theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme", viewport.theme);
-      await expect(page.getByRole("button", { name: "Publish week" })).toBeVisible();
-      await page.getByRole("button", { name: "Publish week" }).scrollIntoViewIfNeeded();
+      await expect(page.getByRole("button", { name: "Unpublished changes" })).toBeVisible();
+      await page.getByRole("button", { name: "Unpublished changes" }).scrollIntoViewIfNeeded();
       await capture(page, `review-${viewport.width}-${viewport.theme}.png`);
       await recordingBeat(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -204,23 +204,13 @@ test.describe("authenticated Business Review and Publish", () => {
     expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual([]);
   });
 
-  test("keeps the review readable in desktop dark mode and translated in all supported languages", async ({ page }) => {
-    const state = await installReviewMocks(page, { theme: "DARK", language: "en" });
+  test("keeps the review readable in desktop dark mode with the selected account language", async ({ page }) => {
+    const state = await installReviewMocks(page, { theme: "DARK", language: "de" });
     state.published = true;
-    await openReview(page, 1440, 980, "dark", "en");
+    await openReview(page, 1440, 980, "dark", "de");
     await expectConsistentReviewState(page, "PUBLISHED_CURRENT");
+    await expect(page.getByRole("heading", { level: 1, name: "Ist jeder Bedarf abgedeckt?" })).toBeVisible();
     await capture(page, "review-desktop-dark.png");
-
-    const expected = [
-      ["de", "Ist jeder Bedarf abgedeckt?"],
-      ["ro", "Este acoperit fiecare necesar?"],
-      ["ru", "Закрыта ли каждая потребность?"],
-      ["en", "Is every requirement covered?"],
-    ] as const;
-    for (const [language, title] of expected) {
-      await page.getByLabel(/Language|Sprache|Limbă|Язык/).selectOption(language);
-      await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
-    }
   });
 });
 

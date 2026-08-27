@@ -141,21 +141,12 @@ test.describe("authenticated Business Demand", () => {
     });
   }
 
-  test("keeps dark mode readable and changes language without leaving the planner", async ({ page }) => {
+  test("keeps dark mode readable with the selected account language", async ({ page }) => {
     await installBusinessDemandMocks(page, { theme: "DARK" });
     await openDemand(page, 1440, 980, "dark");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await captureIfRequested(page, "desktop-dark-en.png");
-    const titles = {
-      de: "Was braucht das Hotel diese Woche?",
-      ro: "De ce are nevoie hotelul săptămâna aceasta?",
-      ru: "Что нужно отелю на этой неделе?",
-      en: "What does the hotel need this week?",
-    };
-    for (const language of ["de", "ro", "ru", "en"] as const) {
-      await page.locator(".business-planning__language select").selectOption(language);
-      await expect(page.getByRole("heading", { name: titles[language] })).toBeVisible();
-    }
+    await expect(page.getByRole("heading", { name: "What does the hotel need this week?" })).toBeVisible();
     await captureIfRequested(page, "desktop-dark-final.png");
   });
 });

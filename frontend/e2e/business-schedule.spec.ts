@@ -31,12 +31,12 @@ test.describe("authenticated Business Schedule", () => {
     await capture(page, "schedule-desktop-initial.png");
     await pause(page);
 
-    await page.getByRole("button", { name: /Assign SPA S on Sunday/ }).click();
-    await expect(page.getByRole("dialog", { name: /SPA S/ })).toBeVisible();
+    await page.getByRole("button", { name: /Assign Spa Spät on Sunday/ }).click();
+    await expect(page.getByRole("dialog", { name: /Spa Spät/ })).toBeVisible();
     await capture(page, "schedule-desktop-open-selected.png");
     await pause(page);
 
-    await page.getByRole("button", { name: /Ana Dumitru/ }).click();
+    await page.getByRole("dialog", { name: /Spa Spät/ }).getByRole("button", { name: /^Ana Dumitru/ }).click();
     await capture(page, "schedule-desktop-inspector.png");
     await page.getByRole("button", { name: "Assign Ana Dumitru" }).click();
 
@@ -62,7 +62,7 @@ test.describe("authenticated Business Schedule", () => {
 
     await page.getByRole("button", { name: /Edit Ana Dumitru assignment/ }).click();
     await page.getByRole("button", { name: "Choose another person" }).click();
-    await page.getByRole("button", { name: /Mihaela Petrescu/ }).click();
+    await page.getByRole("dialog", { name: /Spa Spät/ }).getByRole("button", { name: /^Mihaela Petrescu/ }).click();
     await page.getByRole("checkbox").check();
     await page.getByRole("button", { name: "Confirm replacement" }).click();
     await expect(page.getByText(/Mihaela Petrescu assigned/)).toBeVisible();
@@ -81,8 +81,8 @@ test.describe("authenticated Business Schedule", () => {
     const state = await installScheduleMocks(page);
     await openSchedule(page, 1366, 900);
     await pause(page);
-    await page.getByRole("button", { name: /Assign SPA S on Sunday/ }).click();
-    await page.getByRole("button", { name: /Mihaela Petrescu/ }).click();
+    await page.getByRole("button", { name: /Assign Spa Spät on Sunday/ }).click();
+    await page.getByRole("dialog", { name: /Spa Spät/ }).getByRole("button", { name: /^Mihaela Petrescu/ }).click();
     await expect(page.getByRole("button", { name: "Assign Mihaela Petrescu" })).toBeDisabled();
     await capture(page, "schedule-desktop-warning.png");
     await pause(page);
@@ -97,12 +97,12 @@ test.describe("authenticated Business Schedule", () => {
   test("never replays a stale assignment automatically", async ({ page }) => {
     const state = await installScheduleMocks(page, { staleNext: true });
     await openSchedule(page, 1280, 800);
-    await page.getByRole("button", { name: /Assign SPA S on Sunday/ }).click();
-    await page.getByRole("button", { name: /Ana Dumitru/ }).click();
+    await page.getByRole("button", { name: /Assign Spa Spät on Sunday/ }).click();
+    await page.getByRole("dialog", { name: /Spa Spät/ }).getByRole("button", { name: /^Ana Dumitru/ }).click();
     await page.getByRole("button", { name: "Assign Ana Dumitru" }).click();
     await expect(page.getByText(/changed elsewhere/)).toBeVisible();
     expect(state.requests.filter((request) => request.method === "POST" && request.path.endsWith("/schedule/assignments"))).toHaveLength(1);
-    await expect(page.getByRole("dialog", { name: /SPA S/ })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: /Spa Spät/ })).toBeVisible();
   });
 
   for (const viewport of [
@@ -117,10 +117,10 @@ test.describe("authenticated Business Schedule", () => {
       await page.getByRole("tab").last().click();
       await expect(page.getByRole("heading", { name: /Sunday/ })).toBeVisible();
       await capture(page, `schedule-mobile-${viewport.width}-${theme}.png`);
-      await page.getByRole("button", { name: /SPA S/ }).first().click();
-      await expect(page.getByRole("dialog", { name: /SPA S/ })).toBeVisible();
+      await page.getByRole("button", { name: /Spa Spät/ }).first().click();
+      await expect(page.getByRole("dialog", { name: /Spa Spät/ })).toBeVisible();
       await capture(page, `schedule-mobile-${viewport.width}-${theme}-recommendation.png`);
-      await page.getByRole("button", { name: /Ana Dumitru/ }).click();
+      await page.getByRole("dialog", { name: /Spa Spät/ }).getByRole("button", { name: /^Ana Dumitru/ }).click();
       await page.getByRole("button", { name: "Assign Ana Dumitru" }).click();
       await expect(page.getByText(/Ana Dumitru assigned/)).toBeVisible();
       await capture(page, `schedule-mobile-${viewport.width}-${theme}-assigned.png`);
